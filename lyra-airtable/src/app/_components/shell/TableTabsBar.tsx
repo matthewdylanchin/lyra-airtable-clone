@@ -13,8 +13,10 @@ export default function TableTabsBar() {
         </button>
 
         <div className="ml-auto flex items-center gap-2 text-sm text-zinc-600">
-          <button className="rounded-md px-2 py-1.5 hover:bg-white/60">Tools</button>
-          <ChevronDown className="h-4 w-4 text-zinc-500" />
+          <button className="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-white/60">
+            Tools
+            <ChevronDown className="h-4 w-4 text-zinc-500" />
+          </button>
         </div>
       </div>
     </div>

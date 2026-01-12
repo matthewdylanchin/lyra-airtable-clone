@@ -3,22 +3,27 @@ import {
   Filter,
   EyeOff,
   Search,
-  SlidersHorizontal,
   Layers,
   ArrowDownUp,
   PaintBucket,
   Rows3,
   ExternalLink,
+  Sheet,
+  Menu,
 } from "lucide-react";
 
 export default function ViewActionBar() {
   return (
     <div className="h-[44px] border-b border-zinc-200 bg-white">
       <div className="flex h-full items-center gap-2 px-3">
+        <button
+          className="rounded-md p-2 hover:bg-zinc-100"
+          aria-label="Toggle views sidebar"
+        >
+          <Menu className="h-5 w-5 text-zinc-700" />
+        </button>
         <button className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium hover:bg-zinc-100">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-50 text-blue-600">
-            ▦
-          </span>
+          <Sheet className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-50 text-blue-600"></Sheet>
           Grid view <ChevronDown className="h-4 w-4 text-zinc-500" />
         </button>
 

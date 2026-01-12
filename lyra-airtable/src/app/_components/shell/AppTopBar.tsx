@@ -1,4 +1,4 @@
-import { ChevronDown, Share2 } from "lucide-react";
+import { ChevronDown, SquareMousePointer } from "lucide-react";
 
 export default function AppTopBar() {
   return (
@@ -22,8 +22,9 @@ export default function AppTopBar() {
 
         {/* Right: actions */}
         <div className="flex items-center gap-2">
-          <button className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50">
-            Launch
+          <button className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50">
+            <SquareMousePointer className="h-5 w-5 text-zinc-600" />
+            <span>Launch</span>
           </button>
           <button className="flex items-center gap-2 rounded-md bg-violet-200 px-3 py-1.5 text-sm font-medium hover:bg-violet-300">
             Share
