@@ -121,12 +121,60 @@ exports.Prisma.TransactionIsolationLevel = makeStrictEnum({
   Serializable: 'Serializable'
 });
 
-exports.Prisma.PostScalarFieldEnum = {
+exports.Prisma.BaseScalarFieldEnum = {
   id: 'id',
   name: 'name',
+  ownerId: 'ownerId',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
-  createdById: 'createdById'
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TableScalarFieldEnum = {
+  id: 'id',
+  baseId: 'baseId',
+  name: 'name',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ColumnScalarFieldEnum = {
+  id: 'id',
+  tableId: 'tableId',
+  name: 'name',
+  type: 'type',
+  order: 'order',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.RowScalarFieldEnum = {
+  id: 'id',
+  tableId: 'tableId',
+  rowIndex: 'rowIndex',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.CellScalarFieldEnum = {
+  id: 'id',
+  rowId: 'rowId',
+  columnId: 'columnId',
+  textValue: 'textValue',
+  numberValue: 'numberValue',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ViewScalarFieldEnum = {
+  id: 'id',
+  tableId: 'tableId',
+  name: 'name',
+  filtersJson: 'filtersJson',
+  sortsJson: 'sortsJson',
+  hiddenCols: 'hiddenCols',
+  searchText: 'searchText',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.AccountScalarFieldEnum = {
@@ -171,6 +219,10 @@ exports.Prisma.SortOrder = {
   desc: 'desc'
 };
 
+exports.Prisma.JsonNullValueInput = {
+  JsonNull: Prisma.JsonNull
+};
+
 exports.Prisma.QueryMode = {
   default: 'default',
   insensitive: 'insensitive'
@@ -181,9 +233,23 @@ exports.Prisma.NullsOrder = {
   last: 'last'
 };
 
+exports.Prisma.JsonNullValueFilter = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull,
+  AnyNull: Prisma.AnyNull
+};
+exports.ColumnType = exports.$Enums.ColumnType = {
+  TEXT: 'TEXT',
+  NUMBER: 'NUMBER'
+};
 
 exports.Prisma.ModelName = {
-  Post: 'Post',
+  Base: 'Base',
+  Table: 'Table',
+  Column: 'Column',
+  Row: 'Row',
+  Cell: 'Cell',
+  View: 'View',
   Account: 'Account',
   Session: 'Session',
   User: 'User',
