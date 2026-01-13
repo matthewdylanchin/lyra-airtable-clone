@@ -17,9 +17,10 @@ export default function TableClient() {
     { enabled: !!tableId },
   );
 
-  // ✅ Non-nullable type for TS
   type TableData = NonNullable<typeof q.data>;
   type Cell = TableData["cells"][number];
+  type Row = TableData["rows"][number];
+  type Column = TableData["columns"][number];
 
   const upsert = api.cell.upsertValue.useMutation({
     onSuccess: async () => {
@@ -47,7 +48,7 @@ export default function TableClient() {
   const startEdit = (rowId: string, columnId: string) => {
     setLocalError(null);
     const cell = cellByKey.get(`${rowId}:${columnId}`);
-    const col = data.columns.find((c) => c.id === columnId);
+    const col = data.columns.find((c: Column) => c.id === columnId);
 
     const value =
       col?.type === "NUMBER"
@@ -99,7 +100,7 @@ export default function TableClient() {
         {/* header */}
         <div className="grid grid-cols-[80px_repeat(auto-fit,minmax(220px,1fr))] border-b bg-zinc-50 text-sm font-medium">
           <div className="p-2 text-zinc-500">#</div>
-          {data.columns.map((c) => (
+          {data.columns.map((c: Column) => (
             <div key={c.id} className="p-2">
               {c.name}
             </div>
@@ -107,14 +108,14 @@ export default function TableClient() {
         </div>
 
         {/* rows */}
-        {data.rows.map((r) => (
+        {data.rows.map((r: Row) => (
           <div
             key={r.id}
             className="grid grid-cols-[80px_repeat(auto-fit,minmax(220px,1fr))] border-b text-sm"
           >
             <div className="p-2 text-zinc-500">{r.rowIndex + 1}</div>
 
-            {data.columns.map((c) => {
+            {data.columns.map((c: Column) => {
               const key = `${r.id}:${c.id}`;
               const cell = cellByKey.get(key);
 

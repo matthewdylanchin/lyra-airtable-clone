@@ -8,6 +8,8 @@ import { api } from "@/trpc/react";
 export default function BaseTablesClient() {
   const params = useParams<{ baseId: string }>();
   const baseId = params.baseId;
+  type TablesData = NonNullable<typeof tables>;
+  type Table = TablesData[number];
 
   const utils = api.useUtils();
   const {
@@ -55,7 +57,7 @@ export default function BaseTablesClient() {
           <div className="text-sm text-zinc-500">Loading tables…</div>
         )}
 
-        {(tables ?? []).map((t) => (
+        {(tables ?? []).map((t: Table) => (
           <Link
             key={t.id}
             href={`/base/${baseId}/table/${t.id}`}
