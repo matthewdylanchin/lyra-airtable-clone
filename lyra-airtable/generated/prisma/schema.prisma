@@ -45,6 +45,7 @@ model Table {
   rows    Row[]
   views   View[]
 
+  @@unique([baseId, name])
   @@index([baseId])
 }
 
@@ -60,6 +61,7 @@ model Column {
   table Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
   cells Cell[]
 
+  @@unique([tableId, order])
   @@index([tableId, order])
 }
 

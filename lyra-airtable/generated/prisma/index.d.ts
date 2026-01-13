@@ -13309,6 +13309,7 @@ export namespace Prisma {
 
   export type TableWhereUniqueInput = Prisma.AtLeast<{
     id?: string
+    baseId_name?: TableBaseIdNameCompoundUniqueInput
     AND?: TableWhereInput | TableWhereInput[]
     OR?: TableWhereInput[]
     NOT?: TableWhereInput | TableWhereInput[]
@@ -13320,7 +13321,7 @@ export namespace Prisma {
     columns?: ColumnListRelationFilter
     rows?: RowListRelationFilter
     views?: ViewListRelationFilter
-  }, "id">
+  }, "id" | "baseId_name">
 
   export type TableOrderByWithAggregationInput = {
     id?: SortOrder
@@ -13373,6 +13374,7 @@ export namespace Prisma {
 
   export type ColumnWhereUniqueInput = Prisma.AtLeast<{
     id?: string
+    tableId_order?: ColumnTableIdOrderCompoundUniqueInput
     AND?: ColumnWhereInput | ColumnWhereInput[]
     OR?: ColumnWhereInput[]
     NOT?: ColumnWhereInput | ColumnWhereInput[]
@@ -13384,7 +13386,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFilter<"Column"> | Date | string
     table?: XOR<TableScalarRelationFilter, TableWhereInput>
     cells?: CellListRelationFilter
-  }, "id">
+  }, "id" | "tableId_order">
 
   export type ColumnOrderByWithAggregationInput = {
     id?: SortOrder
@@ -14683,6 +14685,11 @@ export namespace Prisma {
     _count?: SortOrder
   }
 
+  export type TableBaseIdNameCompoundUniqueInput = {
+    baseId: string
+    name: string
+  }
+
   export type TableCountOrderByAggregateInput = {
     id?: SortOrder
     baseId?: SortOrder
@@ -14738,6 +14745,11 @@ export namespace Prisma {
 
   export type CellOrderByRelationAggregateInput = {
     _count?: SortOrder
+  }
+
+  export type ColumnTableIdOrderCompoundUniqueInput = {
+    tableId: string
+    order: number
   }
 
   export type ColumnCountOrderByAggregateInput = {
