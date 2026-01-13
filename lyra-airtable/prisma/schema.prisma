@@ -46,6 +46,7 @@ model Table {
   views     View[]
 
   @@index([baseId])
+  @@unique([baseId, name])
 }
 
 model Column {
@@ -61,6 +62,7 @@ model Column {
   cells     Cell[]
 
   @@index([tableId, order])
+  @@unique([tableId, order])
 }
 
 model Row {

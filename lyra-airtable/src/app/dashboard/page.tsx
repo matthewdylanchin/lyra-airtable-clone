@@ -1,25 +1,24 @@
-import AppTopBar from "../_components/shell/AppTopBar";
-import GridShell from "../_components/shell/GridShell";
-import LeftRail from "../_components/shell/LeftRail";
-import TableTabsBar from "../_components/shell/TableTabsBar";
-import ViewActionBar from "../_components/shell/ViewActionBar";
 
-export default function BasePage() {
-  return (
-    <div className="h-screen w-screen bg-white text-zinc-900">
-      <div className="flex flex-col">
-        <AppTopBar />
-        <TableTabsBar />
-        <ViewActionBar />
-      </div>
-      <div className="flex h-[calc(100vh-44px-44px-44px)]">
-        {/* Left rail */}
-        <LeftRail />
-        {/* Grid */}
-        <div className="flex-1 overflow-hidden">
-          <GridShell />
-        </div>
-      </div>
-    </div>
-  );
+import { redirect } from "next/navigation";
+import { db } from "@/server/db";
+import { getServerAuthSession } from "@/server/auth";
+
+export default async function DashboardPage() {
+  const session = await getServerAuthSession();
+  if (!session) redirect("/signin");
+
+  const bases = await db.base.findMany({
+    where: { ownerId: session.user.id },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true },
+    take: 1,
+  });
+
+  // If user has no bases yet, send them somewhere that creates one
+  // (temporary: you can make /dashboard/new later)
+  if (bases.length === 0) {
+    redirect("/dashboard/new");
+  }
+
+  redirect(`/base/${bases[0]!.id}`);
 }
