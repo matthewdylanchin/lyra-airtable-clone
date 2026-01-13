@@ -1,12 +1,11 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { faker } from '@faker-js/faker'
+import { faker } from "@faker-js/faker";
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
     .input(z.object({ baseId: z.string() }))
     .query(async ({ ctx, input }) => {
-      // Ownership check: base must belong to current user
       const base = await ctx.db.base.findFirst({
         where: { id: input.baseId, ownerId: ctx.session.user.id },
         select: { id: true },
@@ -28,14 +27,12 @@ export const tableRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Ownership check
       const base = await ctx.db.base.findFirst({
         where: { id: input.baseId, ownerId: ctx.session.user.id },
         select: { id: true },
       });
       if (!base) throw new Error("UNAUTHORIZED");
 
-      // Transaction: create table + default columns + default rows + cells
       const result = await ctx.db.$transaction(async (tx) => {
         const table = await tx.table.create({
           data: { baseId: input.baseId, name: input.name },
@@ -44,26 +41,15 @@ export const tableRouter = createTRPCRouter({
 
         const [nameCol, countCol] = await Promise.all([
           tx.column.create({
-            data: {
-              tableId: table.id,
-              name: "Name",
-              type: "TEXT",
-              order: 0,
-            },
+            data: { tableId: table.id, name: "Name", type: "TEXT", order: 0 },
             select: { id: true },
           }),
           tx.column.create({
-            data: {
-              tableId: table.id,
-              name: "Count",
-              type: "NUMBER",
-              order: 1,
-            },
+            data: { tableId: table.id, name: "Count", type: "NUMBER", order: 1 },
             select: { id: true },
           }),
         ]);
 
-        // Create ~20 rows
         const rows = await Promise.all(
           Array.from({ length: 20 }).map((_, i) =>
             tx.row.create({
@@ -73,14 +59,9 @@ export const tableRouter = createTRPCRouter({
           ),
         );
 
-        // Create cells for those rows
         await tx.cell.createMany({
           data: rows.flatMap((r) => [
-            {
-              rowId: r.id,
-              columnId: nameCol.id,
-              textValue: faker.person.fullName(),
-            },
+            { rowId: r.id, columnId: nameCol.id, textValue: faker.person.fullName() },
             {
               rowId: r.id,
               columnId: countCol.id,
@@ -93,5 +74,58 @@ export const tableRouter = createTRPCRouter({
       });
 
       return result;
+    }),
+
+  getData: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+        limit: z.number().int().min(1).max(200).optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const limit = input.limit ?? 50;
+
+      const table = await ctx.db.table.findFirst({
+        where: {
+          id: input.tableId,
+          base: { ownerId: ctx.session.user.id },
+        },
+        select: { id: true, name: true, baseId: true },
+      });
+
+      if (!table) throw new Error("UNAUTHORIZED");
+
+      const [columns, rows] = await Promise.all([
+        ctx.db.column.findMany({
+          where: { tableId: table.id },
+          orderBy: { order: "asc" },
+          select: { id: true, name: true, type: true, order: true },
+        }),
+        ctx.db.row.findMany({
+          where: { tableId: table.id },
+          orderBy: { rowIndex: "asc" },
+          take: limit,
+          select: { id: true, rowIndex: true },
+        }),
+      ]);
+
+      const rowIds = rows.map((r) => r.id);
+
+      const cells = rowIds.length
+        ? await ctx.db.cell.findMany({
+            where: { rowId: { in: rowIds } },
+            select: {
+              id: true,
+              rowId: true,
+              columnId: true,
+              textValue: true,
+              numberValue: true,
+              updatedAt: true,
+            },
+          })
+        : [];
+
+      return { table, columns, rows, cells };
     }),
 });
