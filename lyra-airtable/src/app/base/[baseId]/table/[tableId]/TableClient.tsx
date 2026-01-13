@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
 
@@ -11,6 +11,11 @@ export default function TableClient() {
   const tableId = params.tableId;
 
   const utils = api.useUtils();
+
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const q = api.table.getData.useQuery(
     { tableId, limit: 50 },
@@ -41,7 +46,14 @@ export default function TableClient() {
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
-  if (q.isLoading) return <div className="p-6">Loading…</div>;
+  if (!hydrated) {
+    return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
+  }
+
+  if (q.isLoading) {
+    return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
+  }
+  
   if (q.error)
     return <div className="p-6 text-sm text-red-600">{q.error.message}</div>;
   if (!data) return <div className="p-6">No data</div>;

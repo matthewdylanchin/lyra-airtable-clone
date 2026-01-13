@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
 import { api } from "@/trpc/react";
+import AddOrImportMenu from "./AddOrImportMenu";
 
 export default function TableTabsBar() {
   const params = useParams<{ baseId?: string; tableId?: string }>();
@@ -58,9 +59,7 @@ export default function TableTabsBar() {
         </div>
 
         {/* Add / import (keep as-is for now) */}
-        <button className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-white/60">
-          <Plus className="h-4 w-4" /> Add or import
-        </button>
+        <AddOrImportMenu baseId={baseId} />
 
         <div className="ml-auto flex items-center gap-2 text-sm text-zinc-600">
           <button className="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-white/60">
