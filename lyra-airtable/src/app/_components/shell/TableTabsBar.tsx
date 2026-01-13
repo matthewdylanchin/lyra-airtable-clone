@@ -1,19 +1,63 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
+import { api } from "@/trpc/react";
 
 export default function TableTabsBar() {
+  const params = useParams<{ baseId?: string; tableId?: string }>();
+  const baseId = params.baseId;
+  const activeTableId = params.tableId;
+
+  // If we’re not inside /base/[baseId] routes, keep your static bar (or render nothing)
+  if (!baseId) {
+    return (
+      <div className="relative h-[35px] border-b border-zinc-200 bg-violet-50" />
+    );
+  }
+
+  const { data: tables, isLoading } = api.table.listByBase.useQuery(
+    { baseId },
+    { enabled: !!baseId },
+  );
+
   return (
     <div className="relative h-[35px] overflow-visible border-b border-zinc-200 bg-violet-50">
       <div className="flex h-full items-end gap-2 pr-3 pl-1">
-        <div className="relative">
-          <button className="relative z-50 -mb-[6px] flex items-center gap-1 rounded-l-none rounded-r-[10px] bg-white px-3 py-2.5 text-sm font-semibold text-zinc-900 after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[2px] after:bg-white after:content-['']">
-            <span>Table 1</span>
-            <ChevronDown className="h-4 w-4 text-zinc-500" />
-          </button>
+        {/* Tabs */}
+        <div className="flex items-end gap-2">
+          {isLoading ? (
+            <div className="px-3 py-2 text-sm text-zinc-500">Loading…</div>
+          ) : (
+            (tables ?? []).map((t) => {
+              const isActive = t.id === activeTableId;
 
-          {/* mask ONLY the bottom border under the pill */}
-          <div className="pointer-events-none absolute right-[-4px] bottom-[-1px] left-[-12px] h-[2px] bg-white" />
+              // “Active pill” styling vs inactive tabs
+              const base =
+                "flex items-center gap-1 px-3 py-2.5 text-sm font-semibold";
+              const active =
+                "relative z-50 -mb-[6px] rounded-l-none rounded-r-[10px] bg-white text-zinc-900 after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[2px] after:bg-white after:content-['']";
+              const inactive =
+                "rounded-md bg-transparent text-zinc-700 hover:bg-white/60";
+
+              return (
+                <Link
+                  key={t.id}
+                  href={`/base/${baseId}/table/${t.id}`}
+                  className={`${base} ${isActive ? active : inactive}`}
+                >
+                  <span>{t.name}</span>
+                  {isActive && (
+                    <ChevronDown className="h-4 w-4 text-zinc-500" />
+                  )}
+                </Link>
+              );
+            })
+          )}
         </div>
 
+        {/* Add / import (keep as-is for now) */}
         <button className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-white/60">
           <Plus className="h-4 w-4" /> Add or import
         </button>

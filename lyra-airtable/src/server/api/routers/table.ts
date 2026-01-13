@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { faker } from "@faker-js/faker";
+import { TRPCError } from "@trpc/server";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
@@ -31,49 +34,94 @@ export const tableRouter = createTRPCRouter({
         where: { id: input.baseId, ownerId: ctx.session.user.id },
         select: { id: true },
       });
-      if (!base) throw new Error("UNAUTHORIZED");
 
-      const result = await ctx.db.$transaction(async (tx) => {
-        const table = await tx.table.create({
-          data: { baseId: input.baseId, name: input.name },
-          select: { id: true, name: true, createdAt: true, updatedAt: true },
-        });
+      if (!base) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+      }
 
-        const [nameCol, countCol] = await Promise.all([
-          tx.column.create({
-            data: { tableId: table.id, name: "Name", type: "TEXT", order: 0 },
-            select: { id: true },
-          }),
-          tx.column.create({
-            data: { tableId: table.id, name: "Count", type: "NUMBER", order: 1 },
-            select: { id: true },
-          }),
-        ]);
+      try {
+        const result = await ctx.db.$transaction(async (tx) => {
+          const table = await tx.table.create({
+            data: {
+              baseId: input.baseId,
+              name: input.name,
+            },
+            select: {
+              id: true,
+              name: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
 
-        const rows = await Promise.all(
-          Array.from({ length: 20 }).map((_, i) =>
-            tx.row.create({
-              data: { tableId: table.id, rowIndex: i },
+          const [nameCol, countCol] = await Promise.all([
+            tx.column.create({
+              data: {
+                tableId: table.id,
+                name: "Name",
+                type: "TEXT",
+                order: 0,
+              },
               select: { id: true },
             }),
-          ),
-        );
+            tx.column.create({
+              data: {
+                tableId: table.id,
+                name: "Count",
+                type: "NUMBER",
+                order: 1,
+              },
+              select: { id: true },
+            }),
+          ]);
 
-        await tx.cell.createMany({
-          data: rows.flatMap((r) => [
-            { rowId: r.id, columnId: nameCol.id, textValue: faker.person.fullName() },
-            {
-              rowId: r.id,
-              columnId: countCol.id,
-              numberValue: faker.number.int({ min: 0, max: 1000 }),
-            },
-          ]),
+          const rows = await Promise.all(
+            Array.from({ length: 20 }).map((_, i) =>
+              tx.row.create({
+                data: {
+                  tableId: table.id,
+                  rowIndex: i,
+                },
+                select: { id: true },
+              }),
+            ),
+          );
+
+          await tx.cell.createMany({
+            data: rows.flatMap((r) => [
+              {
+                rowId: r.id,
+                columnId: nameCol.id,
+                textValue: faker.person.fullName(),
+              },
+              {
+                rowId: r.id,
+                columnId: countCol.id,
+                numberValue: faker.number.int({ min: 0, max: 1000 }),
+              },
+            ]),
+          });
+
+          return table;
         });
 
-        return table;
-      });
+        return result;
+      } catch (err: unknown) {
+        if (
+          err instanceof PrismaClientKnownRequestError &&
+          err.code === "P2002"
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Please enter a unique table name",
+          });
+        }
 
-      return result;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create table",
+        });
+      }
     }),
 
   getData: protectedProcedure
