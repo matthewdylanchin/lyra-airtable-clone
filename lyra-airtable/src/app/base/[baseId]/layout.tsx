@@ -20,7 +20,7 @@ export default function BaseLayout({
         {/* Left rail */}
         <LeftRail />
         {/* Grid */}
-        <div className="flex-1 overflow-hidden">{children}</div>
+        <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </div>
   );
