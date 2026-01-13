@@ -76,9 +76,12 @@ export default function TableClient() {
         value: draft,
       });
       setEditing(null);
-    } catch (e: any) {
-      // show TRPC message
-      setLocalError(e?.message ?? "Failed to save");
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        setLocalError(e.message);
+      } else {
+        setLocalError("Failed to save");
+      }
     }
   };
 
