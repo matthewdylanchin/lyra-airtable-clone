@@ -89,7 +89,7 @@ export default function TableClient() {
     <div className="p-6">
       <div className="text-lg font-semibold">{data.table.name}</div>
 
-      {(localError || upsert.error) && (
+      {(localError ?? upsert.error) && (
         <div className="mt-2 text-sm text-red-600">
           {localError ?? upsert.error?.message}
         </div>
