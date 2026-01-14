@@ -2,20 +2,25 @@
 
 import { api } from "@/trpc/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function HomePage() {
-  const { data: bases, isLoading } = api.base.listMine.useQuery();
+  const router = useRouter();
 
-  const createBase = api.base.create.useMutation({
-    onSuccess: (base) => {
-      window.location.href = `/base/${base.id}`;
-    },
-  });
+  const { data: bases, isLoading } = api.base.listMine.useQuery();
+  const createBase = api.base.create.useMutation();
+
+  const onCreateBase = async () => {
+    const result = await createBase.mutateAsync({
+      name: "Untitled Base",
+    });
+
+    router.push(`/base/${result.baseId}/table/${result.tableId}`);
+  };
 
   if (isLoading) {
-    return <div className="p-6">Loading…</div>;
+    return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
   }
-
   return (
     <div className="flex h-screen bg-zinc-50 text-zinc-900">
       {/* Left sidebar */}
