@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   type ColumnDef,
@@ -10,9 +10,18 @@ import {
   type CellContext,
 } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
-import type { Table } from "generated/prisma";
+import { cn } from "@/lib/utils";
+
+/* -------------------- Types -------------------- */
 
 type Editing = { rowId: string; columnId: string } | null;
+
+type SelectedCell = {
+  rowIndex: number;
+  colIndex: number;
+} | null;
+
+/* -------------------- Component -------------------- */
 
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
@@ -33,7 +42,7 @@ export default function TableClient() {
 
   const data = q.data;
 
-  /** ---------- Types derived from API ---------- */
+  /* ---------- Types derived from API ---------- */
   type TableData = NonNullable<typeof data>;
   type Column = TableData["columns"][number];
   type Row = TableData["rows"][number];
@@ -44,7 +53,7 @@ export default function TableClient() {
     __rowId: string;
   } & Record<string, CellValue>;
 
-  /** ---------- Build fast lookup for cells ---------- */
+  /* ---------- Fast lookup for cells ---------- */
   const cellByKey = useMemo(() => {
     const map = new Map<string, Cell>();
     if (!data) return map;
@@ -54,11 +63,13 @@ export default function TableClient() {
     return map;
   }, [data]);
 
-  /** ---------- Editing state ---------- */
+  /* ---------- Editing + selection state ---------- */
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
 
+  /* ---------- Helpers ---------- */
   const startEdit = (rowId: string, columnId: string) => {
     setLocalError(null);
 
@@ -91,19 +102,85 @@ export default function TableClient() {
       });
       setEditing(null);
     } catch (e: unknown) {
-      if (e instanceof Error) setLocalError(e.message);
-      else setLocalError("Failed to save");
+      setLocalError(e instanceof Error ? e.message : "Failed to save");
     }
   };
 
-  /** ---------- Derive table rows for TanStack ---------- */
+  /* ---------- Keyboard navigation ---------- */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!selectedCell) return;
+
+      const rows = table.getRowModel().rows;
+      const cols = table.getAllLeafColumns();
+      const isDataColumn = (i: number) => cols[i]?.id !== "__index";
+
+      if (!rows.length || !cols.length) return;
+
+      let { rowIndex, colIndex } = selectedCell;
+
+      // Type to edit
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        const row = rows[rowIndex];
+        const col = cols[colIndex];
+
+        if (!row || !col || !col.id || col.id === "__index") return;
+
+        startEdit(row.original.__rowId, col.id);
+        setDraft(e.key);
+        e.preventDefault();
+        return;
+      }
+
+      switch (e.key) {
+        case "ArrowDown":
+          rowIndex = Math.min(rowIndex + 1, rows.length - 1);
+          break;
+        case "ArrowUp":
+          rowIndex = Math.max(rowIndex - 1, 0);
+          break;
+        case "ArrowRight":
+        case "Tab": {
+          let next = colIndex + 1;
+          while (next < cols.length && !isDataColumn(next)) next++;
+          colIndex = Math.min(next, cols.length - 1);
+          break;
+        }
+        case "ArrowLeft": {
+          let prev = colIndex - 1;
+          while (prev > 0 && !isDataColumn(prev)) prev--;
+          colIndex = Math.max(prev, 0);
+          break;
+        }
+        case "Enter": {
+          const row = rows[rowIndex];
+          const col = cols[colIndex];
+          if (!row || !col || !col.id || col.id === "__index") return;
+          startEdit(row.original.__rowId, col.id);
+          e.preventDefault();
+          return;
+        }
+        case "Escape":
+          setSelectedCell(null);
+          return;
+        default:
+          return;
+      }
+
+      e.preventDefault();
+      setSelectedCell({ rowIndex, colIndex });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedCell, editing]);
+
+  /* ---------- Build TanStack rows ---------- */
   const tableData = useMemo<TableRow[]>(() => {
     if (!data) return [];
 
     return data.rows.map((r: Row): TableRow => {
-      const row: TableRow = {
-        __rowId: r.id,
-      };
+      const row: TableRow = { __rowId: r.id };
 
       for (const c of data.columns) {
         const cell = cellByKey.get(`${r.id}:${c.id}`);
@@ -117,7 +194,7 @@ export default function TableClient() {
     });
   }, [data, cellByKey]);
 
-  /** ---------- Define TanStack columns ---------- */
+  /* ---------- TanStack columns ---------- */
   const columnDefs = useMemo<ColumnDef<TableRow, CellValue>[]>(() => {
     if (!data) return [];
 
@@ -127,25 +204,39 @@ export default function TableClient() {
         header: "#",
         cell: (info) => info.row.index + 1,
       },
-
       ...data.columns.map(
         (c): ColumnDef<TableRow, CellValue> => ({
           id: c.id,
           header: c.name,
-
-          accessorFn: (row: TableRow): CellValue => row[c.id] ?? null,
-
+          accessorFn: (row) => row[c.id] ?? null,
           cell: (info: CellContext<TableRow, CellValue>) => {
             const value = info.getValue();
             const rowId = info.row.original.__rowId;
+            const rowIndex = info.row.index;
+            const colIndex = info.column.getIndex();
+
+            const isSelected =
+              selectedCell?.rowIndex === rowIndex &&
+              selectedCell?.colIndex === colIndex;
 
             const isEditing =
               editing?.rowId === rowId && editing?.columnId === c.id;
 
             return (
               <div
-                className="h-8 w-full px-2 py-1 hover:bg-zinc-50"
-                onClick={() => !isEditing && startEdit(rowId, c.id)}
+                tabIndex={0}
+                className={cn(
+                  "h-8 w-full cursor-default px-2 py-1 outline-none",
+                  isSelected && "outline outline-2 outline-blue-600",
+                  !isEditing && "hover:bg-zinc-50",
+                )}
+                onClick={() => {
+                  setSelectedCell({ rowIndex, colIndex });
+                }}
+                onDoubleClick={() => {
+                  setSelectedCell({ rowIndex, colIndex });
+                  startEdit(rowId, c.id);
+                }}
               >
                 {isEditing ? (
                   <input
@@ -154,7 +245,16 @@ export default function TableClient() {
                     onChange={(e) => setDraft(e.target.value)}
                     onBlur={() => void commitEdit()}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") void commitEdit();
+                      if (e.key === "Enter") {
+                        void commitEdit();
+                        setSelectedCell({
+                          rowIndex: Math.min(
+                            rowIndex + 1,
+                            table.getRowModel().rows.length - 1,
+                          ),
+                          colIndex,
+                        });
+                      }
                       if (e.key === "Escape") cancelEdit();
                     }}
                     className="h-8 w-full rounded-md border border-blue-600 px-2 outline-none"
@@ -168,22 +268,22 @@ export default function TableClient() {
         }),
       ),
     ];
-  }, [data, editing, draft]);
+  }, [data, editing, draft, selectedCell]);
 
-  /** ---------- Create TanStack table ---------- */
+  /* ---------- Create table ---------- */
   const table = useReactTable({
     data: tableData,
     columns: columnDefs,
     getCoreRowModel: getCoreRowModel(),
   });
 
-  /** ---------- Loading / error ---------- */
+  /* ---------- Loading / error ---------- */
   if (q.isLoading) return <div className="p-6">Loading…</div>;
   if (q.error)
     return <div className="p-6 text-sm text-red-600">{q.error.message}</div>;
   if (!data) return <div className="p-6">No data</div>;
 
-  /** ---------- Render ---------- */
+  /* ---------- Render ---------- */
   return (
     <div className="p-6">
       <div className="text-lg font-semibold">{data.table.name}</div>
