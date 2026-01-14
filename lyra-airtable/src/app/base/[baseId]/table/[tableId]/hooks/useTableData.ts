@@ -1,21 +1,22 @@
-// table/useTableData.ts
 import { useMemo } from "react";
-import type { TableRow } from "../types";
+import type { TableData, TableRow, Cell } from "../types";
 
-export function useTableData(data: any) {
+export function useTableData(data: TableData | undefined) {
   const cellByKey = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, Cell>();
     if (!data) return map;
+
     for (const c of data.cells) {
       map.set(`${c.rowId}:${c.columnId}`, c);
     }
+
     return map;
   }, [data]);
 
   const tableData = useMemo<TableRow[]>(() => {
     if (!data) return [];
 
-    return data.rows.map((r: any) => {
+    return data.rows.map((r) => {
       const row: TableRow = { __rowId: r.id };
 
       for (const c of data.columns) {

@@ -1,15 +1,16 @@
-// table/useTableEditing.ts
 import { useState } from "react";
-import type { Editing } from "../types";
+import type { TableData, Cell, Editing } from "../types";
+import type { UseTRPCMutationResult } from "node_modules/@trpc/react-query/dist/getQueryKey.d-CruH3ncI.mjs";
+
 
 export function useTableEditing({
   data,
   cellByKey,
   upsert,
 }: {
-  data: any;
-  cellByKey: Map<string, any>;
-  upsert: any;
+  data: TableData | undefined;
+  cellByKey: Map<string, Cell>;
+  upsert: UseTRPCMutationResult<any, any, any, any>;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
@@ -23,7 +24,7 @@ export function useTableEditing({
     setLocalError(null);
 
     const cell = cellByKey.get(`${rowId}:${columnId}`);
-    const col = data?.columns.find((c: any) => c.id === columnId);
+    const col = data?.columns.find((c) => c.id === columnId);
 
     const value =
       col?.type === "NUMBER"
@@ -50,7 +51,7 @@ export function useTableEditing({
         value: draft,
       });
       setEditing(null);
-    } catch (e: unknown) {
+    } catch (e) {
       setLocalError(e instanceof Error ? e.message : "Failed to save");
     }
   };
@@ -59,9 +60,9 @@ export function useTableEditing({
     editing,
     draft,
     localError,
-    setDraft,
     startEdit,
     cancelEdit,
     commitEdit,
+    setDraft,
   };
 }
