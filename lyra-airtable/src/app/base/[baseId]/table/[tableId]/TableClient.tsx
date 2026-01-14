@@ -230,8 +230,8 @@ export default function TableClient() {
               <div
                 tabIndex={0}
                 className={cn(
-                  "h-8 w-full cursor-default px-2 py-1 outline-none",
-                  isSelected && "bg-blue-50 ring-2 ring-blue-600 ring-inset",
+                  "relative h-8 w-full cursor-default px-2 py-1 outline-none",
+                  isSelected && "ring-2 ring-blue-600 ring-inset",
                   !isEditing && "hover:bg-zinc-50",
                 )}
                 onClick={() => {
@@ -247,21 +247,17 @@ export default function TableClient() {
                     autoFocus
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    onBlur={() => void commitEdit()}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
+                        e.preventDefault();
                         void commitEdit();
-                        setSelectedCell({
-                          rowIndex: Math.min(
-                            rowIndex + 1,
-                            table.getRowModel().rows.length - 1,
-                          ),
-                          colIndex,
-                        });
                       }
-                      if (e.key === "Escape") cancelEdit();
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelEdit();
+                      }
                     }}
-                    className="h-8 w-full rounded-md border border-blue-600 px-2 outline-none"
+                    className="absolute inset-0 box-border px-2 ring-2 ring-blue-600 outline-none"
                   />
                 ) : (
                   String(value ?? "")
