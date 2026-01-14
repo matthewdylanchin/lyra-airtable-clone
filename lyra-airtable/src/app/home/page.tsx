@@ -29,7 +29,11 @@ export default function HomePage() {
         <div className="absolute bottom-4 left-4">
           <button
             type="button"
-            onClick={() => createBase.mutate({ name: "Untitled Base" })}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              createBase.mutate({ name: "Untitled Base" });
+            }}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
           >
             + Create
