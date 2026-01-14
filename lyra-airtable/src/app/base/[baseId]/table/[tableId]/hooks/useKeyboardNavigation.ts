@@ -1,6 +1,7 @@
 // table/useKeyboardNavigation.ts
 import { useEffect } from "react";
-import type { SelectedCell } from "../types";
+import type { SelectedCell, TableRow, Editing } from "../types";
+import type { Table } from "@tanstack/react-table";
 
 export function useKeyboardNavigation({
   table,
@@ -9,7 +10,18 @@ export function useKeyboardNavigation({
   editing,
   startEdit,
   setDraft,
-}: any) {
+}: {
+  table: Table<TableRow>;
+  selectedCell: SelectedCell;
+  setSelectedCell: (v: SelectedCell) => void;
+  editing: Editing;
+  startEdit: (
+    rowId: string,
+    columnId: string,
+    mode?: "replace" | "append",
+  ) => void;
+  setDraft: (v: string) => void;
+}) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!selectedCell) return;
@@ -23,7 +35,7 @@ export function useKeyboardNavigation({
       if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !editing) {
         const row = rows[rowIndex];
         const col = cols[colIndex];
-        if (!row || col.id === "__index") return;
+        if (!row || !col || col.id === "__index") return;
 
         startEdit(row.original.__rowId, col.id);
         setDraft(e.key);
@@ -48,7 +60,7 @@ export function useKeyboardNavigation({
         case "Enter": {
           const row = rows[rowIndex];
           const col = cols[colIndex];
-          if (!row || col.id === "__index") return;
+          if (!row || !col || col.id === "__index") return;
           startEdit(row.original.__rowId, col.id, "append");
           e.preventDefault();
           return;
