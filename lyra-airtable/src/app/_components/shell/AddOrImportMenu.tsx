@@ -10,8 +10,6 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const utils = api.useUtils();
-
   const create = api.table.create.useMutation({
     onSuccess: async () => {
       setOpen(false);
