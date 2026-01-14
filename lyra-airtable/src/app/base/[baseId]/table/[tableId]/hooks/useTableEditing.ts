@@ -1,6 +1,5 @@
 import { useState } from "react";
-import type { TableData, Cell, Editing } from "../types";
-import type { UseTRPCMutationResult } from "node_modules/@trpc/react-query/dist/getQueryKey.d-CruH3ncI.mjs";
+import type { TableData, Cell, Editing, CellUpsertMutation } from "../types";
 
 
 export function useTableEditing({
@@ -10,7 +9,7 @@ export function useTableEditing({
 }: {
   data: TableData | undefined;
   cellByKey: Map<string, Cell>;
-  upsert: UseTRPCMutationResult<any, any, any, any>;
+  upsert: CellUpsertMutation;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");

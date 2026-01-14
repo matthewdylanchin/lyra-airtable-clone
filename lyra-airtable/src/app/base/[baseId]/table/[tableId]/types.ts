@@ -1,4 +1,5 @@
-import type { RouterOutputs } from "@/trpc/react";
+import type { RouterOutputs, RouterInputs } from "@/trpc/react";
+import type { UseMutationResult } from "@tanstack/react-query";
 
 export type TableData = RouterOutputs["table"]["getData"];
 
@@ -21,3 +22,17 @@ export type SelectedCell = {
   rowIndex: number;
   colIndex: number;
 } | null;
+
+export type CellUpsertInput =
+  RouterInputs["cell"]["upsertValue"];
+
+export type CellUpsertOutput =
+  RouterOutputs["cell"]["upsertValue"];
+
+export type CellUpsertMutation =
+  UseMutationResult<
+    CellUpsertOutput,
+    unknown,
+    CellUpsertInput,
+    unknown
+  >;

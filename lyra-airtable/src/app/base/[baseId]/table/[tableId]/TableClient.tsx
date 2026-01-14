@@ -18,6 +18,10 @@ export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
 
+  const commitEditSafe = () => {
+    void commitEdit();
+  };
+
   /* ---------- tRPC ---------- */
   const utils = api.useUtils();
 
@@ -65,7 +69,7 @@ export default function TableClient() {
         selectedCell,
         setSelectedCell,
         startEdit,
-        commitEdit,
+        commitEdit : commitEditSafe, 
         cancelEdit,
         setDraft,
       }),
