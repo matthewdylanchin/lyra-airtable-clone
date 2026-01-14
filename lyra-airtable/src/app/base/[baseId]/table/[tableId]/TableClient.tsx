@@ -70,7 +70,11 @@ export default function TableClient() {
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
 
   /* ---------- Helpers ---------- */
-  const startEdit = (rowId: string, columnId: string) => {
+  const startEdit = (
+    rowId: string,
+    columnId: string,
+    mode: "replace" | "append" = "replace",
+  ) => {
     setLocalError(null);
 
     const cell = cellByKey.get(`${rowId}:${columnId}`);
@@ -81,7 +85,7 @@ export default function TableClient() {
         ? (cell?.numberValue ?? "")
         : (cell?.textValue ?? "");
 
-    setDraft(String(value));
+    setDraft(mode === "append" ? String(value) : "");
     setEditing({ rowId, columnId });
   };
 
@@ -120,14 +124,14 @@ export default function TableClient() {
       let { rowIndex, colIndex } = selectedCell;
 
       // Type to edit
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !editing) {
         const row = rows[rowIndex];
         const col = cols[colIndex];
 
-        if (!row || !col || !col.id || col.id === "__index") return;
+        if (!row || !col || col.id === "__index") return;
 
         startEdit(row.original.__rowId, col.id);
-        setDraft(e.key);
+        setDraft(e.key); // replace entire cell
         e.preventDefault();
         return;
       }
@@ -156,7 +160,7 @@ export default function TableClient() {
           const row = rows[rowIndex];
           const col = cols[colIndex];
           if (!row || !col || !col.id || col.id === "__index") return;
-          startEdit(row.original.__rowId, col.id);
+          startEdit(row.original.__rowId, col.id, "append");
           e.preventDefault();
           return;
         }
@@ -227,7 +231,7 @@ export default function TableClient() {
                 tabIndex={0}
                 className={cn(
                   "h-8 w-full cursor-default px-2 py-1 outline-none",
-                  isSelected && "outline outline-2 outline-blue-600",
+                  isSelected && "bg-blue-50 ring-2 ring-blue-600 ring-inset",
                   !isEditing && "hover:bg-zinc-50",
                 )}
                 onClick={() => {
@@ -235,7 +239,7 @@ export default function TableClient() {
                 }}
                 onDoubleClick={() => {
                   setSelectedCell({ rowIndex, colIndex });
-                  startEdit(rowId, c.id);
+                  startEdit(rowId, c.id, "append");
                 }}
               >
                 {isEditing ? (
