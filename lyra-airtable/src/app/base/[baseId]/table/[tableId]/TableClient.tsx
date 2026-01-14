@@ -117,6 +117,8 @@ export default function TableClient() {
 
       const rows = table.getRowModel().rows;
       const cols = table.getAllLeafColumns();
+      const FIRST_DATA_COL = 1;
+      const LAST_DATA_COL = cols.length - 1;
       const isDataColumn = (i: number) => cols[i]?.id !== "__index";
 
       if (!rows.length || !cols.length) return;
@@ -145,15 +147,16 @@ export default function TableClient() {
           break;
         case "ArrowRight":
         case "Tab": {
-          let next = colIndex + 1;
-          while (next < cols.length && !isDataColumn(next)) next++;
-          colIndex = Math.min(next, cols.length - 1);
+          if (colIndex < LAST_DATA_COL) {
+            colIndex += 1;
+          }
           break;
         }
+
         case "ArrowLeft": {
-          let prev = colIndex - 1;
-          while (prev > 0 && !isDataColumn(prev)) prev--;
-          colIndex = Math.max(prev, 0);
+          if (colIndex > FIRST_DATA_COL) {
+            colIndex -= 1;
+          }
           break;
         }
         case "Enter": {
