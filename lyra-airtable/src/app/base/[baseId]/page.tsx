@@ -4,14 +4,15 @@ import { api } from "@/trpc/server";
 export default async function BasePage({
   params,
 }: {
-  params: { baseId: string };
+  params: Promise<{ baseId: string }>;
 }) {
-  const tables = await api.table.listByBase({
-    baseId: params.baseId,
-  });
+  const { baseId } = await params;
+
+  const tables = await api.table.listByBase({ baseId });
 
   if (!tables.length) {
-    return redirect("/home");
+    redirect("/home");
   }
-  redirect(`/base/${params.baseId}/table/${tables[0]!.id}`);
+
+  redirect(`/base/${baseId}/table/${tables[0]!.id}`);
 }
