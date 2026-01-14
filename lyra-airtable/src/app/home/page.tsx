@@ -10,14 +10,6 @@ export default function HomePage() {
   const { data: bases, isLoading } = api.base.listMine.useQuery();
   const createBase = api.base.create.useMutation();
 
-  const onCreateBase = async () => {
-    const result = await createBase.mutateAsync({
-      name: "Untitled Base",
-    });
-
-    router.push(`/base/${result.baseId}/table/${result.tableId}`);
-  };
-
   if (isLoading) {
     return <div className="p-6 text-sm text-zinc-500">Loading…</div>;
   }

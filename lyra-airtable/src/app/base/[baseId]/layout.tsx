@@ -1,6 +1,5 @@
 import AppTopBar from "@/app/_components/shell/AppTopBar";
 import BaseSidebar from "@/app/_components/shell/BaseSidebar";
-import LeftRail from "@/app/_components/shell/LeftRail";
 import TableTabsBar from "@/app/_components/shell/TableTabsBar";
 import ViewActionBar from "@/app/_components/shell/ViewActionBar";
 
