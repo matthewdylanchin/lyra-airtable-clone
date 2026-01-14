@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { api } from "@/trpc/react";
 import AddOrImportMenu from "./AddOrImportMenu";
 

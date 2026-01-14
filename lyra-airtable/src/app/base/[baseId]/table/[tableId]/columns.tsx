@@ -76,7 +76,7 @@ export function createColumns({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    commitEdit();
+                    void commitEdit();
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
