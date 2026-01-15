@@ -31,6 +31,7 @@
     "@trpc/server": "^11.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
+    "motion": "^12.26.2",
     "next": "^15.2.3",
     "next-auth": "5.0.0-beta.25",
     "react": "^19.0.0",

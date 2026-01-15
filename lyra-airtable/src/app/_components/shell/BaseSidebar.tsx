@@ -4,16 +4,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
+import { UserMenu } from "../UserMenu";
 import { Boxes, HelpCircle, Bell } from "lucide-react";
 
 export default function BaseSidebar() {
   const [hoverLogo, setHoverLogo] = useState(false);
   const { data: session } = useSession();
-
-  const userInitial =
-    session?.user?.name?.[0]?.toUpperCase() ??
-    session?.user?.email?.[0]?.toUpperCase() ??
-    "U";
 
   return (
     <div className="flex h-full w-[56px] flex-col items-center border-r border-zinc-200 bg-zinc-50 py-3">
@@ -53,9 +49,12 @@ export default function BaseSidebar() {
         <Bell className="h-5 w-5 cursor-pointer text-zinc-500 hover:text-zinc-700" />
 
         {/* Avatar */}
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-semibold text-white">
-          {userInitial}
-        </div>
+        <UserMenu
+          user={{
+            name: session?.user?.name ?? "User",
+            email: session?.user?.email ?? "No email",
+          }}
+        />
       </div>
     </div>
   );

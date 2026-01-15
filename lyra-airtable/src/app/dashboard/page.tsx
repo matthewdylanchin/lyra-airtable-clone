@@ -1,4 +1,3 @@
-
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { getServerAuthSession } from "@/server/auth";
@@ -9,8 +8,14 @@ export default async function DashboardPage() {
 
   const bases = await db.base.findMany({
     where: { ownerId: session.user.id },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true },
+    orderBy: { lastOpenedAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      createdAt: true,
+      updatedAt: true,
+      lastOpenedAt: true,
+    },
     take: 1,
   });
 
