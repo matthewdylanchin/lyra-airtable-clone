@@ -1,6 +1,16 @@
 "use client";
 
-import { Star, Folder, User, Home, Plus } from "lucide-react";
+import {
+  Star,
+  Share2,
+  Home,
+  Plus,
+  ChevronRight,
+  Users,
+  Upload,
+  ShoppingBag,
+  BookOpen,
+} from "lucide-react";
 import { useState } from "react";
 import CreateModal from "./CreateModal";
 
@@ -8,24 +18,39 @@ export default function HomeSidebar() {
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <div className="flex h-full w-[240px] flex-col border-r bg-[#fafafa]">
-      {/* Top section */}
-      <div className="px-4 pt-5 pb-3 text-[13px] font-medium text-zinc-700">
-        Home
+    <div className="flex h-full w-[220px] flex-col border-r border-zinc-200 bg-white">
+      {/* Nav items */}
+      <div className="px-3 pt-2">
+        <SidebarItem icon={<Home size={16} />} label="Home" active />
+        <SidebarItem icon={<Star size={16} />} label="Starred" hasChevron />
+        <SidebarItem icon={<Share2 size={16} />} label="Shared" />
+        <SidebarItem
+          icon={<Users size={16} />}
+          label="Workspaces"
+          hasPlus
+          hasChevron
+        />
       </div>
 
-      {/* Nav items */}
-      <SidebarItem icon={<Star size={15} />} label="Starred" />
-      <SidebarItem icon={<User size={15} />} label="Shared" />
-      <SidebarItem icon={<Folder size={15} />} label="Workspaces" />
+      {/* Spacer */}
+      <div className="flex-1" />
 
       {/* Bottom section */}
-      <div className="mt-auto border-t p-4">
+      <div className="border-t border-zinc-200 px-3 py-3">
+        <div className="mb-3 space-y-0.5">
+          <BottomItem
+            icon={<BookOpen size={16} />}
+            label="Templates and apps"
+          />
+          <BottomItem icon={<ShoppingBag size={16} />} label="Marketplace" />
+          <BottomItem icon={<Upload size={16} />} label="Import" />
+        </div>
+
         <button
           onClick={() => setModalOpen(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-600 py-2 text-sm text-white transition hover:bg-blue-700"
+          className="flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-blue-700"
         >
-          <Plus size={16} /> Create
+          <Plus size={16} strokeWidth={2.5} /> Create
         </button>
 
         <CreateModal open={modalOpen} onClose={() => setModalOpen(false)} />
@@ -37,14 +62,37 @@ export default function HomeSidebar() {
 function SidebarItem({
   icon,
   label,
+  active,
+  hasChevron,
+  hasPlus,
 }: {
   icon: React.ReactNode;
   label: string;
+  active?: boolean;
+  hasChevron?: boolean;
+  hasPlus?: boolean;
 }) {
   return (
-    <div className="flex cursor-pointer items-center gap-3 px-4 py-2 text-[13px] text-zinc-600 transition hover:bg-zinc-200/60">
-      {icon}
-      {label}
+    <div
+      className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-normal transition ${
+        active ? "bg-zinc-100 text-zinc-900" : "text-zinc-700 hover:bg-zinc-50"
+      }`}
+    >
+      <span className="text-zinc-700">{icon}</span>
+      <span className="flex-1">{label}</span>
+      {hasPlus && <Plus size={14} strokeWidth={2} className="text-zinc-500" />}
+      {hasChevron && (
+        <ChevronRight size={14} strokeWidth={2} className="text-zinc-400" />
+      )}
+    </div>
+  );
+}
+
+function BottomItem({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] font-normal text-zinc-700 transition hover:bg-zinc-50">
+      <span className="text-zinc-600">{icon}</span>
+      <span>{label}</span>
     </div>
   );
 }

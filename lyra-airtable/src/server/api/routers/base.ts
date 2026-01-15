@@ -16,12 +16,14 @@ export const baseRouter = createTRPCRouter({
           data: {
             name: input.name,
             ownerId: ctx.session.user.id,
+            lastOpenedAt: new Date(),
           },
           select: {
             id: true,
             name: true,
             createdAt: true,
             updatedAt: true,
+            lastOpenedAt: true,
           },
         });
 
@@ -128,6 +130,27 @@ export const baseRouter = createTRPCRouter({
           baseId: base.id,
           tableId: table.id,
         };
+      });
+    }),
+
+  getById: protectedProcedure
+    .input(z.string())
+    .query(async ({ ctx, input: baseId }) => {
+      // Update lastOpenedAt whenever user opens a base
+      await ctx.db.base.update({
+        where: { id: baseId },
+        data: { lastOpenedAt: new Date() },
+      });
+
+      return ctx.db.base.findUnique({
+        where: { id: baseId },
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+          updatedAt: true,
+          lastOpenedAt: true,
+        },
       });
     }),
 
