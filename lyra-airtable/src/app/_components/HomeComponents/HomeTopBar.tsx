@@ -4,7 +4,6 @@ import { Menu, HelpCircle, Bell } from "lucide-react";
 import Image from "next/image";
 import { UserMenu } from "../UserMenu";
 import HomeSearchBar from "./HomeSearchbar";
-import type { Session } from "next-auth";
 
 export default function HomeTopBar({
   user,

@@ -11,11 +11,6 @@ export default function BaseSidebar() {
   const [hoverLogo, setHoverLogo] = useState(false);
   const { data: session } = useSession();
 
-  const userInitial =
-    session?.user?.name?.[0]?.toUpperCase() ??
-    session?.user?.email?.[0]?.toUpperCase() ??
-    "U";
-
   return (
     <div className="flex h-full w-[56px] flex-col items-center border-r border-zinc-200 bg-zinc-50 py-3">
       {/* Top section */}

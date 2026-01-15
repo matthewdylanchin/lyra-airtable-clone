@@ -7,12 +7,16 @@ import Image from "next/image";
 import { api } from "@/trpc/react";
 import { useRouter } from "next/navigation";
 
-export default function CreateModal({ open, onClose }: any) {
+interface CreateModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export default function CreateModal({ open, onClose }: CreateModalProps) {
   const router = useRouter();
 
   const createBase = api.base.create.useMutation({
-    onSuccess(data) {
-      // Redirect to new base table view
+    onSuccess: (data) => {
       router.push(`/base/${data.baseId}/table/${data.tableId}`);
       onClose();
     },
@@ -22,7 +26,7 @@ export default function CreateModal({ open, onClose }: any) {
     createBase.mutate({ name: "Untitled Base" });
   }
 
-  // ESC to close
+  // ESC → close
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -35,7 +39,7 @@ export default function CreateModal({ open, onClose }: any) {
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
+          {/* BACKDROP */}
           <motion.div
             className="fixed inset-0 z-40 bg-black/40"
             onClick={onClose}
@@ -44,7 +48,7 @@ export default function CreateModal({ open, onClose }: any) {
             exit={{ opacity: 0 }}
           />
 
-          {/* Modal */}
+          {/* MODAL */}
           <motion.div
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
             initial={{ opacity: 0, scale: 0.96 }}
@@ -55,11 +59,12 @@ export default function CreateModal({ open, onClose }: any) {
               className="w-full max-w-2xl rounded-xl bg-white p-8 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
+              {/* HEADER */}
               <div className="mb-6 flex items-start justify-between">
                 <h2 className="text-2xl font-semibold text-zinc-900">
                   How do you want to start?
                 </h2>
+
                 <button
                   onClick={onClose}
                   className="rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600"
@@ -68,16 +73,16 @@ export default function CreateModal({ open, onClose }: any) {
                 </button>
               </div>
 
-              {/* Workspace selector */}
+              {/* WORKSPACE SELECTOR */}
               <div className="mb-6 text-sm text-zinc-700">
                 <span className="font-semibold">Workspace:</span>{" "}
                 <span className="text-zinc-600">Workspace</span>{" "}
                 <span className="text-zinc-400">▾</span>
               </div>
 
-              {/* Options grid */}
+              {/* OPTIONS GRID */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Omni option (disabled for now) */}
+                {/* OMNI OPTION (STATIC) */}
                 <button className="group flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-left transition hover:border-zinc-300 hover:shadow-lg">
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-gradient-to-br from-pink-50 to-purple-50">
                     <Image
@@ -103,7 +108,7 @@ export default function CreateModal({ open, onClose }: any) {
                   </div>
                 </button>
 
-                {/* Blank option */}
+                {/* BLANK OPTION */}
                 <button
                   onClick={handleCreateBlank}
                   disabled={createBase.isPending}
@@ -122,6 +127,7 @@ export default function CreateModal({ open, onClose }: any) {
                     <span className="mb-1 block text-base font-semibold text-zinc-900">
                       Build an app on your own
                     </span>
+
                     <p className="text-sm text-zinc-600">
                       {createBase.isPending
                         ? "Creating…"
