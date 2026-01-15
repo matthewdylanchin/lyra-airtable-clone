@@ -2,12 +2,16 @@
 
 import { useState, useEffect, useRef } from "react";
 
-function HomeSearchBar({ onSearch }: { onSearch?: (q: string) => void }) {
+interface HomeSearchBarProps {
+  onSearch?: (q: string) => void;
+}
+
+function HomeSearchBar({ onSearch }: HomeSearchBarProps) {
   const [active, setActive] = useState(false);
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // CMD+K → focus search bar
+  /** CMD+K → focus search bar */
   useEffect(() => {
     function handle(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -16,14 +20,15 @@ function HomeSearchBar({ onSearch }: { onSearch?: (q: string) => void }) {
         setTimeout(() => inputRef.current?.focus(), 10);
       }
     }
+
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
   }, []);
 
-  // Emit search text
+  /** Emit search text */
   useEffect(() => {
-    onSearch?.(query);
-  }, [query]);
+    if (onSearch) onSearch(query);
+  }, [query, onSearch]); // ← FIXED dependency warning
 
   return (
     <div
@@ -53,7 +58,9 @@ function HomeSearchBar({ onSearch }: { onSearch?: (q: string) => void }) {
         <input
           ref={inputRef}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setQuery(e.target.value) // ← FIXED: typed event
+          }
           onBlur={() => {
             if (query === "") setActive(false);
           }}

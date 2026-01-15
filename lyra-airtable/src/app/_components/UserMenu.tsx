@@ -17,7 +17,14 @@ import {
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 
-export function UserMenu({ user }: { user: { name: string; email: string } }) {
+export function UserMenu({
+  user,
+}: {
+  user: {
+    name?: string | null;
+    email?: string | null;
+  };
+}) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ left: number; top: number }>({
     left: 0,
@@ -26,6 +33,10 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
 
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Fallbacks to avoid TS errors when name/email are null
+  const displayName = user.name ?? "User";
+  const displayEmail = user.email ?? "No email";
 
   /** Position menu adaptively based on available space */
   useEffect(() => {
@@ -36,49 +47,28 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
     const menuHeight = 440;
     const gap = 8;
 
-    // Calculate available space in all directions
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
 
-    // Determine vertical position (prefer below, but open above if not enough space)
     const openUpward = spaceBelow < menuHeight && spaceAbove > spaceBelow;
 
-    let left: number;
-    let top: number;
+    let left = rect.right - menuWidth;
+    let top = openUpward ? rect.top - menuHeight - gap : rect.bottom + gap;
 
-    // Calculate vertical position
-    if (openUpward) {
-      // Opening upward (at top) - position directly below the button, centered/right-aligned
-      top = rect.top - menuHeight - gap;
-      // Ensure doesn't go off top
-      if (top < gap) {
-        top = gap;
-      }
-      // Align right edge of menu with right edge of button
-      left = rect.right - menuWidth;
-    } else {
-      // Opening downward (at bottom) - position to the right side
-      top = rect.bottom + gap;
-      // Ensure doesn't go off bottom
-      if (top + menuHeight > window.innerHeight - gap) {
-        top = window.innerHeight - menuHeight - gap;
-      }
-      // Position menu to start near the left edge of the button (opens to the right)
-      left = rect.left;
-    }
+    // Clamp vertically
+    if (top < gap) top = gap;
+    if (top + menuHeight > window.innerHeight - gap)
+      top = window.innerHeight - menuHeight - gap;
 
-    // Final boundary checks for horizontal position
-    if (left + menuWidth > window.innerWidth - gap) {
+    // Clamp horizontally
+    if (left < gap) left = gap;
+    if (left + menuWidth > window.innerWidth - gap)
       left = window.innerWidth - menuWidth - gap;
-    }
-    if (left < gap) {
-      left = gap;
-    }
 
     setCoords({ left, top });
   }, [open]);
 
-  /** Close on click outside */
+  /** Click outside → close */
   useEffect(() => {
     function handle(e: MouseEvent) {
       if (
@@ -94,26 +84,24 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  /** Menu element (portaled globally) */
+  /** MENU CONTENT (Portaled) */
   const menu = (
     <div
       ref={menuRef}
       className="fixed z-[9999] w-72 rounded-xl border border-zinc-200 bg-white shadow-xl"
-      style={{
-        top: coords.top,
-        left: coords.left,
-      }}
+      style={{ top: coords.top, left: coords.left }}
     >
       <div className="max-h-[440px] overflow-y-auto px-3 pt-3 pb-2">
         {/* Header */}
         <div className="mb-2 px-2">
           <div className="text-[13px] font-normal text-zinc-800">
-            {user.name}
+            {displayName}
           </div>
-          <div className="text-[12px] text-zinc-500">{user.email}</div>
+          <div className="text-[12px] text-zinc-500">{displayEmail}</div>
         </div>
 
         <Divider />
+
         <MenuItem icon={<UserRound size={15} />} label="Account" />
         <MenuItem
           icon={<UsersRound size={15} />}
@@ -138,11 +126,13 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
         />
 
         <Divider />
+
         <MenuItem icon={<Mail size={15} />} label="Contact sales" />
         <MenuItem icon={<Star size={15} />} label="Upgrade" />
         <MenuItem icon={<Mail size={15} />} label="Tell a friend" />
 
         <Divider />
+
         <MenuItem icon={<Link size={15} />} label="Integrations" />
         <MenuItem icon={<Wrench size={15} />} label="Builder hub" />
 
@@ -165,10 +155,10 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
     <div>
       <button
         ref={btnRef}
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen((o) => !o)}
         className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-xs text-white"
       >
-        {user.name[0]}
+        {displayName[0]}
       </button>
 
       {open &&
@@ -179,8 +169,17 @@ export function UserMenu({ user }: { user: { name: string; email: string } }) {
 }
 
 /* --- Small Components --- */
-
-function MenuItem({ icon, label, badge, arrow }: any) {
+function MenuItem({
+  icon,
+  label,
+  badge,
+  arrow,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  badge?: string;
+  arrow?: boolean;
+}) {
   return (
     <div className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-[13px] hover:bg-zinc-100">
       <div className="flex items-center gap-2">
@@ -206,51 +205,4 @@ function MenuItem({ icon, label, badge, arrow }: any) {
 
 function Divider() {
   return <div className="my-2 border-t border-zinc-200" />;
-}
-
-// Demo wrapper to show the menu in different positions
-export default function Demo() {
-  const user = {
-    name: "Matthew Dylan Chin",
-    email: "matthewdylanchin@gmail.com",
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="mb-6 text-2xl font-semibold text-slate-800">
-          Adaptive Position User Menu
-        </h1>
-        <p className="mb-8 text-sm text-slate-600">
-          Try clicking the user icons in different corners to see the menu adapt
-          its position
-        </p>
-
-        {/* Top left */}
-        <div className="absolute top-8 left-8">
-          <UserMenu user={user} />
-        </div>
-
-        {/* Top right */}
-        <div className="absolute top-8 right-8">
-          <UserMenu user={user} />
-        </div>
-
-        {/* Bottom left */}
-        <div className="absolute bottom-8 left-8">
-          <UserMenu user={user} />
-        </div>
-
-        {/* Bottom right */}
-        <div className="absolute right-8 bottom-8">
-          <UserMenu user={user} />
-        </div>
-
-        {/* Center for testing */}
-        <div className="flex h-[calc(100vh-200px)] items-center justify-center">
-          <UserMenu user={user} />
-        </div>
-      </div>
-    </div>
-  );
 }

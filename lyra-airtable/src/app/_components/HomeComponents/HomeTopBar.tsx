@@ -4,8 +4,19 @@ import { Menu, HelpCircle, Bell } from "lucide-react";
 import Image from "next/image";
 import { UserMenu } from "../UserMenu";
 import HomeSearchBar from "./HomeSearchbar";
+import type { Session } from "next-auth";
 
-export default function HomeTopBar({ user }: { user: any }) {
+export default function HomeTopBar({
+  user,
+}: {
+  user:
+    | {
+        name?: string | null;
+        email?: string | null;
+      }
+    | null
+    | undefined;
+}) {
   return (
     <header className="relative z-40 flex h-[49px] items-center border-b border-zinc-200 bg-white px-4">
       {/* Left section — menu icon + Airtable logo */}
@@ -40,7 +51,12 @@ export default function HomeTopBar({ user }: { user: any }) {
         </button>
 
         <div className="relative z-50">
-          <UserMenu user={user} />
+          <UserMenu
+            user={{
+              name: user?.name ?? "User",
+              email: user?.email ?? "No email",
+            }}
+          />
         </div>
       </div>
     </header>
