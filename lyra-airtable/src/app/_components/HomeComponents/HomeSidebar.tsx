@@ -18,7 +18,7 @@ export default function HomeSidebar() {
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <div className="flex h-full w-[220px] flex-col border-r border-zinc-200 bg-white">
+    <div className="flex h-full w-[280px] flex-col border-r border-zinc-200 bg-white">
       {/* Nav items */}
       <div className="px-3 pt-2">
         <SidebarItem icon={<Home size={16} />} label="Home" active />

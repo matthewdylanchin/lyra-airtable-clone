@@ -163,6 +163,21 @@ export const baseRouter = createTRPCRouter({
       });
     }),
 
+  rename: protectedProcedure
+    .input(z.object({ id: z.string(), name: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.base.update({
+        where: { id: input.id },
+        data: { name: input.name, updatedAt: new Date() },
+      });
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.base.delete({ where: { id: input.id } });
+    }),
+
   listMine: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.base.findMany({
       where: { ownerId: ctx.session.user.id },
