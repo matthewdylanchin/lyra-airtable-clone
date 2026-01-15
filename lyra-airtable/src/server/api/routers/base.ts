@@ -154,15 +154,25 @@ export const baseRouter = createTRPCRouter({
       });
     }),
 
+  updateLastOpened: protectedProcedure
+    .input(z.object({ baseId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.base.update({
+        where: { id: input.baseId },
+        data: { lastOpenedAt: new Date() },
+      });
+    }),
+
   listMine: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.base.findMany({
       where: { ownerId: ctx.session.user.id },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { lastOpenedAt: "desc" },
       select: {
         id: true,
         name: true,
         createdAt: true,
         updatedAt: true,
+        lastOpenedAt: true,
       },
     });
   }),

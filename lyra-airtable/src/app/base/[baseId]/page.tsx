@@ -8,6 +8,10 @@ export default async function BasePage({
 }) {
   const { baseId } = await params;
 
+  // 1️⃣ Auto updates lastOpenedAt because getById mutation triggers update
+  await api.base.getById(baseId);
+
+  // 2️⃣ Load tables
   const tables = await api.table.listByBase({ baseId });
 
   if (!tables.length) {
