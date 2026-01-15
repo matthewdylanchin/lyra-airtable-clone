@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   // (temporary: you can make /dashboard/new later)
   if (bases.length === 0) {
     redirect("/dashboard/new");
-  }
+    }
 
   redirect(`/base/${bases[0]!.id}`);
 }
