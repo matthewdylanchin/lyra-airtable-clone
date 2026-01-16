@@ -86,6 +86,7 @@ export default function TableClient() {
       commitEdit,
       cancelEdit,
       setDraft,
+      setAddColumnOpen,
     ],
   );
 
@@ -116,6 +117,8 @@ export default function TableClient() {
   return (
     <div className="p-6">
       <div className="text-lg font-semibold">{data.table.name}</div>
+
+      {/* ❌ REMOVED - only render in TableView */}
 
       {(localError ?? upsert.error) && (
         <div className="mt-2 text-sm text-red-600">

@@ -6,7 +6,6 @@ import type { TableRow } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
 import type { ColumnInsertPosition } from "./types";
-import { useState } from "react";
 
 export function TableView({
   table,
@@ -20,49 +19,53 @@ export function TableView({
   const { tableId } = useParams<{ tableId: string }>();
 
   return (
-    <table className="w-full border-collapse text-sm">
-      <thead className="sticky top-0 bg-zinc-50">
-        {table.getHeaderGroups().map((hg) => (
-          <tr key={hg.id}>
-            {/* EXISTING COLUMNS */}
-            {hg.headers.map((header) => (
-              <th
-                key={header.id}
-                className="border-b px-2 py-2 text-left font-medium whitespace-nowrap"
-              >
-                {flexRender(
-                  header.column.columnDef.header,
-                  header.getContext(),
-                )}
+    <>
+      <table className="w-full border-collapse text-sm">
+        <thead className="sticky top-0 bg-zinc-50">
+          {table.getHeaderGroups().map((hg) => (
+            <tr key={hg.id}>
+              {hg.headers.map((header) => (
+                <th
+                  key={header.id}
+                  className="border-b px-2 py-2 text-left font-medium whitespace-nowrap"
+                >
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  )}
+                </th>
+              ))}
+
+              {/* ✅ PERMANENT ADD COLUMN BUTTON (always visible) */}
+              <th className="border-b px-2 py-2 text-left font-medium">
+                <AddColumnButton tableId={tableId} />
               </th>
-            ))}
+            </tr>
+          ))}
+        </thead>
 
-            {/* ADD COLUMN BUTTON */}
-            <th className="border-b px-2 py-2 text-left font-medium">
-              {addColumnOpen && (
-                <AddColumnButton
-                  tableId={tableId}
-                  insert={addColumnOpen}
-                  onClose={onCloseAddColumn}
-                  autoOpen
-                />
-              )}
-            </th>
-          </tr>
-        ))}
-      </thead>
+        <tbody>
+          {table.getRowModel().rows.map((row) => (
+            <tr key={row.id} className="border-b">
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id} className="px-1">
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
-      <tbody>
-        {table.getRowModel().rows.map((row) => (
-          <tr key={row.id} className="border-b">
-            {row.getVisibleCells().map((cell) => (
-              <td key={cell.id} className="px-1">
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+      {/* ✅ INSERT LEFT/RIGHT ADD COLUMN BUTTON (opens when you click insert) */}
+      {addColumnOpen && (
+        <AddColumnButton
+          tableId={tableId}
+          insert={addColumnOpen}
+          onClose={onCloseAddColumn}
+          autoOpen
+        />
+      )}
+    </>
   );
 }

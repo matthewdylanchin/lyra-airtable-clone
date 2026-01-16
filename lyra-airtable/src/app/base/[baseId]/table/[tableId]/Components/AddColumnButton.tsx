@@ -150,13 +150,13 @@ const standardFields = [
 
 export default function AddColumnButton({
   tableId,
-  insert,
+  insert = { type: "end" },
   onClose,
   autoOpen = false,
 }: {
   tableId: string;
-  insert: ColumnInsertPosition;
-  onClose: () => void;
+  insert?: ColumnInsertPosition;
+  onClose?: () => void;
   autoOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -167,6 +167,7 @@ export default function AddColumnButton({
   );
   const [colName, setColName] = useState("");
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [mounted, setMounted] = useState(false); // ✅ Add mounted check
 
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -175,34 +176,81 @@ export default function AddColumnButton({
 
   const utils = api.useUtils();
 
+  // ✅ Check if mounted (client-side only)
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const createColumn = api.column.create.useMutation({
     onSuccess: () => {
       utils.table.getData.invalidate({ tableId });
-      setOpen(false);
-      setColName("");
-      setSelectedType(null);
-      setStep("menu");
-      setSearch("");
-      onClose();
+      reset();
+    },
+    onError: (error) => {
+      console.error("Create column error:", error);
     },
   });
 
-  useEffect(() => {
-    if (autoOpen) setOpen(true);
-  }, [autoOpen]);
+  const insertColumn = api.column.insertAtPosition.useMutation({
+    onSuccess: () => {
+      utils.table.getData.invalidate({ tableId });
+      reset();
+    },
+    onError: (error) => {
+      console.error("Insert column error:", error);
+    },
+  });
 
-  // Calculate dropdown position when opening
+  function reset() {
+    setOpen(false);
+    setColName("");
+    setSelectedType(null);
+    setStep("menu");
+    setSearch("");
+    onClose?.();
+  }
+
   useEffect(() => {
-    if (open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      setDropdownPosition({
-        top: rect.bottom + 4,
-        left: rect.right - 320, // 320px = w-80
-      });
+    if (autoOpen && mounted) {
+      // ✅ Only auto-open after mount
+      setTimeout(() => setOpen(true), 100);
     }
+  }, [autoOpen, mounted]);
+
+  // ✅ Better positioning - recalculate on open
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+
+    let ticking = false;
+
+    const calculatePosition = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(() => {
+          if (!buttonRef.current) return;
+          const rect = buttonRef.current.getBoundingClientRect();
+
+          setDropdownPosition({
+            top: rect.bottom + 8,
+            left: Math.max(8, rect.left - 320 + rect.width),
+          });
+
+          ticking = false;
+        });
+      }
+    };
+
+    calculatePosition();
+
+    window.addEventListener("scroll", calculatePosition, true);
+    window.addEventListener("resize", calculatePosition);
+
+    return () => {
+      window.removeEventListener("scroll", calculatePosition, true);
+      window.removeEventListener("resize", calculatePosition);
+    };
   }, [open]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (
@@ -211,28 +259,26 @@ export default function AddColumnButton({
         buttonRef.current &&
         !buttonRef.current.contains(e.target as Node)
       ) {
-        setOpen(false);
-        setStep("menu");
-        setSearch("");
+        reset();
       }
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+    if (open) {
+      document.addEventListener("mousedown", handleClick);
+      return () => document.removeEventListener("mousedown", handleClick);
+    }
+  }, [open]);
 
-  // Auto-focus search when opening
   useEffect(() => {
-    if (open && step === "menu") {
+    if (open && step === "menu" && mounted) {
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
-  }, [open, step]);
+  }, [open, step, mounted]);
 
-  // Auto-focus name field when entering form step
   useEffect(() => {
-    if (step === "form") {
+    if (step === "form" && mounted) {
       setTimeout(() => inputRef.current?.focus(), 20);
     }
-  }, [step]);
+  }, [step, mounted]);
 
   const filteredAgents = fieldAgents.filter((f) =>
     f.label.toLowerCase().includes(search.toLowerCase()),
@@ -242,6 +288,44 @@ export default function AddColumnButton({
     f.label.toLowerCase().includes(search.toLowerCase()),
   );
 
+  function handleCreateColumn() {
+    if (!selectedType || colName.trim() === "" || !mounted) {
+      console.log("Validation failed:", { selectedType, colName, mounted });
+      return;
+    }
+
+    const columnData = {
+      tableId,
+      name: colName.trim(),
+      type: selectedType,
+    };
+
+    console.log("=== CREATING COLUMN ===");
+    console.log("Insert type:", insert.type);
+    console.log("Insert object:", insert);
+    console.log("Column data:", columnData);
+
+    if (insert.type === "before" || insert.type === "after") {
+      if (!insert.columnId) {
+        console.error("❌ Missing columnId for insert position");
+        return;
+      }
+
+      const mutationData = {
+        tableId: columnData.tableId,
+        anchorColumnId: insert.columnId,
+        position: insert.type,
+        name: columnData.name,
+        type: columnData.type,
+      };
+
+      console.log("📤 Calling insertColumn.mutate with:", mutationData);
+      insertColumn.mutate(mutationData);
+    } else {
+      console.log("📤 Calling createColumn.mutate with:", columnData);
+      createColumn.mutate(columnData);
+    }
+  }
   const dropdownContent = (
     <div
       ref={menuRef}
@@ -251,9 +335,9 @@ export default function AddColumnButton({
         left: `${dropdownPosition.left}px`,
       }}
     >
+      {/* ... rest of your dropdown content stays the same ... */}
       {step === "menu" && (
         <div className="flex max-h-[600px] flex-col">
-          {/* Search bar */}
           <div className="border-b border-zinc-200 p-3">
             <div className="relative">
               <Search
@@ -270,9 +354,7 @@ export default function AddColumnButton({
             </div>
           </div>
 
-          {/* Scrollable content */}
           <div className="overflow-y-auto px-3 py-2">
-            {/* Field agents section */}
             {filteredAgents.length > 0 && (
               <div className="mb-4">
                 <div className="mb-2 px-2 text-xs font-semibold text-zinc-500">
@@ -293,7 +375,6 @@ export default function AddColumnButton({
               </div>
             )}
 
-            {/* Standard fields section */}
             {filteredFields.length > 0 && (
               <div>
                 <div className="mb-2 px-2 text-xs font-semibold text-zinc-500">
@@ -304,7 +385,7 @@ export default function AddColumnButton({
                     <button
                       key={field.label}
                       disabled={field.disabled}
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => {
                         if (!field.disabled && field.type) {
                           setSelectedType(field.type as "TEXT" | "NUMBER");
@@ -320,7 +401,6 @@ export default function AddColumnButton({
               </div>
             )}
 
-            {/* No results */}
             {filteredAgents.length === 0 && filteredFields.length === 0 && (
               <div className="py-8 text-center text-sm text-zinc-500">
                 No field types found
@@ -330,7 +410,6 @@ export default function AddColumnButton({
         </div>
       )}
 
-      {/* FORM STEP */}
       {step === "form" && (
         <div className="p-4">
           <div className="mb-3 text-xs font-semibold text-zinc-500 uppercase">
@@ -341,11 +420,19 @@ export default function AddColumnButton({
             ref={inputRef}
             value={colName}
             onChange={(e) => setColName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleCreateColumn();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                reset();
+              }
+            }}
             placeholder="Field name"
             className="mb-3 w-full rounded-md border border-blue-500 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
           />
 
-          {/* Default value placeholder (not implemented) */}
           <input
             disabled
             placeholder="Enter default value (optional)"
@@ -365,27 +452,18 @@ export default function AddColumnButton({
             </button>
 
             <button
-              onClick={() => {
-                if (!selectedType || colName.trim() === "") return;
-                // createColumn.mutate({
-                //   tableId,
-                //   insert,
-                //   name: colName.trim(),
-                //   type: selectedType,
-                // });
-
-                const payload = {
-                  tableId,
-                  name: colName.trim(),
-                  type: selectedType,
-                };
-
-                createColumn.mutate(payload);
-              }}
-              disabled={!selectedType || colName.trim() === ""}
+              onClick={handleCreateColumn}
+              disabled={
+                !selectedType ||
+                colName.trim() === "" ||
+                insertColumn.isPending ||
+                createColumn.isPending
+              }
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Create field
+              {insertColumn.isPending || createColumn.isPending
+                ? "Creating..."
+                : "Create field"}
             </button>
           </div>
         </div>
@@ -395,7 +473,6 @@ export default function AddColumnButton({
 
   return (
     <>
-      {/* Main Button */}
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
@@ -404,10 +481,7 @@ export default function AddColumnButton({
         <Plus size={16} />
       </button>
 
-      {/* Dropdown - Portaled to body */}
-      {open &&
-        typeof window !== "undefined" &&
-        createPortal(dropdownContent, document.body)}
+      {open && createPortal(dropdownContent, document.body)}
     </>
   );
 }

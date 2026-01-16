@@ -47,7 +47,7 @@ export default function ColumnHeaderMenu({
     const left = rect.left + rect.width / 2 - menuRect.width / 2;
 
     setCoords({ top, left });
-  }, []);
+  }, [anchorRef]);
 
   // Close on outside click
   useEffect(() => {
@@ -89,8 +89,9 @@ export default function ColumnHeaderMenu({
       <button
         type="button"
         onClick={() => {
+          console.log("Insert left clicked, columnId:", columnId); // Debug
           onInsert({ type: "before", columnId });
-          onClose();
+          onClose(); // Close the menu after calling onInsert
         }}
         className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
       >
@@ -100,8 +101,9 @@ export default function ColumnHeaderMenu({
       <button
         type="button"
         onClick={() => {
+          console.log("Insert right clicked, columnId:", columnId); // Debug
           onInsert({ type: "after", columnId });
-          onClose();
+          onClose(); // Close the menu after calling onInsert
         }}
         className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
       >
