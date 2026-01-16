@@ -90,21 +90,43 @@ export default function EditFieldPopover({
     },
   });
 
-  /* ---------------- Position aligned with column start (accounting for chevron) ---------------- */
+  /* ---------------- Position aligned with column start with smart viewport bounds checking ---------------- */
   useLayoutEffect(() => {
     if (!anchorRef.current || !popoverRef.current) return;
 
     const rect = anchorRef.current.getBoundingClientRect();
+    const popoverWidth = 600; // Width of the popover
     const GAP = 8;
+    const OFFSET = 12; // Align with column text start
+    const padding = 16; // Padding from viewport edges
 
-    // The anchor is the column header which includes the chevron
-    // We need to account for the padding and chevron width
-    // Typically the text starts about 8-12px from the left edge
-    const OFFSET = 12; // Adjust this to align with column text start
+    let top = rect.bottom + GAP;
+    let left = rect.left + OFFSET;
+
+    // ✅ Check if popover would go off right edge
+    if (left + popoverWidth > window.innerWidth - padding) {
+      // Position to align right edge with viewport, with padding
+      left = window.innerWidth - popoverWidth - padding;
+    }
+
+    // Ensure it doesn't go off left edge
+    left = Math.max(padding, left);
+
+    // ✅ Check if popover would go off bottom edge
+    const popoverHeight = popoverRef.current.offsetHeight || 400; // Approximate height
+    if (top + popoverHeight > window.innerHeight - padding) {
+      // Position above the column header instead
+      top = rect.top - popoverHeight - GAP;
+
+      // If still off screen (too close to top), pin to viewport
+      if (top < padding) {
+        top = padding;
+      }
+    }
 
     setCoords({
-      top: rect.bottom + GAP,
-      left: rect.left + OFFSET,
+      top,
+      left,
     });
   }, [anchorRef]);
 

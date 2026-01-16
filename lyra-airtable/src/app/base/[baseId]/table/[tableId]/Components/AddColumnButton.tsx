@@ -225,7 +225,7 @@ export default function AddColumnButton({
     if (!open) return;
 
     const calculatePosition = () => {
-      const menuWidth = 320;
+      const menuWidth = step === "form" ? 640 : 320;
       const menuHeight = 600;
       const padding = 16;
 
@@ -246,9 +246,19 @@ export default function AddColumnButton({
         left = rect.left;
       }
 
-      // Adjust if menu would go off right edge
+      // ✅ Smart horizontal positioning - flip to left if would be cut off on right
       if (left + menuWidth > window.innerWidth - padding) {
-        left = window.innerWidth - menuWidth - padding;
+        // Position to the left of the trigger instead
+        if (initialPosition) {
+          // For form, align right edge with trigger
+          left = initialPosition.left - menuWidth + 40; // 40px is approximate button width
+        } else {
+          const refToUse = targetColumnRef?.current ?? buttonRef.current;
+          if (refToUse) {
+            const rect = refToUse.getBoundingClientRect();
+            left = rect.right - menuWidth;
+          }
+        }
       }
 
       // Ensure menu doesn't go off left edge
@@ -285,7 +295,7 @@ export default function AddColumnButton({
       window.removeEventListener("scroll", calculatePosition, true);
       window.removeEventListener("resize", calculatePosition);
     };
-  }, [open, targetColumnRef, initialPosition]);
+  }, [open, targetColumnRef, initialPosition, step]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -302,7 +312,7 @@ export default function AddColumnButton({
       document.addEventListener("mousedown", handleClick);
       return () => document.removeEventListener("mousedown", handleClick);
     }
-  }, [open]);
+  }, [open, reset]);
 
   useEffect(() => {
     if (open && step === "menu" && mounted) {
@@ -325,30 +335,40 @@ export default function AddColumnButton({
   );
 
   function handleCreateColumn() {
-    if (!selectedType || colName.trim() === "" || !mounted) return;
+    if (!selectedType || !mounted) {
+      console.log("Validation failed:", { selectedType, mounted });
+      return;
+    }
 
     const columnData = {
       tableId,
-      name: colName.trim(),
+      name: colName.trim() || "Untitled",
       type: selectedType,
     };
 
-    console.log("Creating column:", { insert, columnData });
+    console.log("=== CREATING COLUMN ===");
+    console.log("Insert type:", insert.type);
+    console.log("Insert object:", insert);
+    console.log("Column data:", columnData);
 
     if (insert.type === "before" || insert.type === "after") {
       if (!insert.columnId) {
-        console.error("Missing columnId for insert position");
+        console.error("❌ Missing columnId for insert position");
         return;
       }
 
-      void insertColumn.mutate({
+      const mutationData = {
         tableId: columnData.tableId,
         anchorColumnId: insert.columnId,
         position: insert.type,
         name: columnData.name,
         type: columnData.type,
-      });
+      };
+
+      console.log("📤 Calling insertColumn.mutate with:", mutationData);
+      void insertColumn.mutate(mutationData);
     } else {
+      console.log("📤 Calling createColumn.mutate with:", columnData);
       void createColumn.mutate(columnData);
     }
   }
@@ -356,7 +376,9 @@ export default function AddColumnButton({
   const dropdownContent = (
     <div
       ref={menuRef}
-      className="fixed z-[9999] w-80 rounded-lg border border-zinc-200 bg-white shadow-xl"
+      className={`fixed z-[9999] rounded-lg border border-zinc-200 bg-white shadow-xl ${
+        step === "form" ? "w-auto" : "w-80"
+      }`}
       style={{
         top: `${dropdownPosition.top}px`,
         left: `${dropdownPosition.left}px`,
@@ -437,42 +459,99 @@ export default function AddColumnButton({
       )}
 
       {step === "form" && (
-        <div className="p-4">
-          <div className="mb-3 text-xs font-semibold text-zinc-500 uppercase">
+        <div className="w-[640px] p-6">
+          <div className="mb-4 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
             Create field
           </div>
 
-          <input
-            ref={inputRef}
-            value={colName}
-            onChange={(e) => setColName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleCreateColumn();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                reset();
-              }
-            }}
-            placeholder="Field name"
-            className="mb-3 w-full rounded-md border border-blue-500 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          {/* Icon and Name Row */}
+          <div className="mb-4 flex items-start gap-3">
+            {/* Icon Selector */}
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-zinc-300 bg-white">
+              <User size={20} className="text-zinc-600" />
+            </div>
 
-          <input
-            disabled
-            placeholder="Enter default value (optional)"
-            className="mb-4 w-full cursor-not-allowed rounded-md border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-400"
-          />
+            {/* Field Name Input */}
+            <input
+              ref={inputRef}
+              value={colName}
+              onChange={(e) => setColName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreateColumn();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  reset();
+                }
+              }}
+              placeholder="Field name (optional)"
+              className="flex-1 rounded-lg border border-blue-500 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+            />
+          </div>
 
-          <div className="flex justify-end gap-2">
+          {/* Field Type Dropdown */}
+          <div className="mb-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-left text-sm hover:bg-zinc-50"
+            >
+              <div className="flex items-center gap-3">
+                {selectedType === "TEXT" && (
+                  <>
+                    <Type size={16} className="text-zinc-600" />
+                    <span>Single line text</span>
+                  </>
+                )}
+                {selectedType === "NUMBER" && (
+                  <>
+                    <Hash size={16} className="text-zinc-600" />
+                    <span>Number</span>
+                  </>
+                )}
+              </div>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                className="text-zinc-400"
+              >
+                <path
+                  d="M3 4.5L6 7.5L9 4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+
+          {/* Description Text */}
+          <div className="mb-4 text-sm text-zinc-600">
+            {selectedType === "TEXT" && "Enter text."}
+            {selectedType === "NUMBER" && "Enter a number."}
+          </div>
+
+          {/* Add Description Button */}
+          <button
+            type="button"
+            className="mb-6 flex items-center gap-2 text-sm text-zinc-600 hover:text-zinc-900"
+          >
+            <Plus size={16} />
+            <span>Add description</span>
+          </button>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 pt-4">
             <button
               onClick={() => {
                 setStep("menu");
                 setSelectedType(null);
                 setColName("");
               }}
-              className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
             >
               Cancel
             </button>
@@ -481,11 +560,10 @@ export default function AddColumnButton({
               onClick={handleCreateColumn}
               disabled={
                 !selectedType ||
-                colName.trim() === "" ||
                 insertColumn.isPending ||
                 createColumn.isPending
               }
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {insertColumn.isPending || createColumn.isPending
                 ? "Creating..."
