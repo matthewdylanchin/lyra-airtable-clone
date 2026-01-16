@@ -153,11 +153,15 @@ export default function AddColumnButton({
   insert = { type: "end" },
   onClose,
   autoOpen = false,
+  targetColumnRef,
+  initialPosition,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
   onClose?: () => void;
   autoOpen?: boolean;
+  targetColumnRef?: React.RefObject<HTMLElement | null>;
+  initialPosition?: { top: number; left: number };
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -167,7 +171,7 @@ export default function AddColumnButton({
   );
   const [colName, setColName] = useState("");
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
-  const [mounted, setMounted] = useState(false); // ✅ Add mounted check
+  const [mounted, setMounted] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -176,7 +180,7 @@ export default function AddColumnButton({
 
   const utils = api.useUtils();
 
-  // ✅ Check if mounted (client-side only)
+  // Check if mounted (client-side only)
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -212,44 +216,76 @@ export default function AddColumnButton({
 
   useEffect(() => {
     if (autoOpen && mounted) {
-      // ✅ Only auto-open after mount
       setTimeout(() => setOpen(true), 100);
     }
   }, [autoOpen, mounted]);
 
-  // ✅ Better positioning - recalculate on open
+  // ✅ Use initialPosition if provided (from context menu), otherwise calculate from ref
   useEffect(() => {
-    if (!open || !buttonRef.current) return;
-
-    let ticking = false;
+    if (!open) return;
 
     const calculatePosition = () => {
-      if (!ticking) {
-        ticking = true;
-        requestAnimationFrame(() => {
-          if (!buttonRef.current) return;
-          const rect = buttonRef.current.getBoundingClientRect();
+      const menuWidth = 320;
+      const menuHeight = 600;
+      const padding = 16;
 
-          setDropdownPosition({
-            top: rect.bottom + 8,
-            left: Math.max(8, rect.left - 320 + rect.width),
-          });
+      let top: number;
+      let left: number;
 
-          ticking = false;
-        });
+      // If we have a pre-calculated position, use it
+      if (initialPosition) {
+        top = initialPosition.top;
+        left = initialPosition.left;
+      } else {
+        // Calculate from ref (for regular "+" button clicks)
+        const refToUse = targetColumnRef?.current || buttonRef.current;
+        if (!refToUse) return;
+
+        const rect = refToUse.getBoundingClientRect();
+        top = rect.bottom + 8;
+        left = rect.left;
       }
+
+      // Adjust if menu would go off right edge
+      if (left + menuWidth > window.innerWidth - padding) {
+        left = window.innerWidth - menuWidth - padding;
+      }
+
+      // Ensure menu doesn't go off left edge
+      left = Math.max(padding, left);
+
+      // Adjust if menu would go off bottom
+      if (top + menuHeight > window.innerHeight - padding) {
+        // If we have initialPosition, try positioning above
+        if (initialPosition) {
+          top = initialPosition.top - menuHeight - 8;
+        }
+
+        // If still off screen, pin to bottom
+        if (top < padding) {
+          top = window.innerHeight - menuHeight - padding;
+        }
+      }
+
+      // Ensure it doesn't go off top
+      top = Math.max(padding, top);
+
+      setDropdownPosition({ top, left });
     };
 
     calculatePosition();
+
+    const timeoutId = setTimeout(calculatePosition, 10);
 
     window.addEventListener("scroll", calculatePosition, true);
     window.addEventListener("resize", calculatePosition);
 
     return () => {
+      clearTimeout(timeoutId);
       window.removeEventListener("scroll", calculatePosition, true);
       window.removeEventListener("resize", calculatePosition);
     };
-  }, [open]);
+  }, [open, targetColumnRef, initialPosition]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -326,16 +362,16 @@ export default function AddColumnButton({
       createColumn.mutate(columnData);
     }
   }
+
   const dropdownContent = (
     <div
       ref={menuRef}
-      className="fixed z-[9999] rounded-lg border border-zinc-200 bg-white shadow-xl"
+      className="fixed z-[9999] w-80 rounded-lg border border-zinc-200 bg-white shadow-xl"
       style={{
         top: `${dropdownPosition.top}px`,
         left: `${dropdownPosition.left}px`,
       }}
     >
-      {/* ... rest of your dropdown content stays the same ... */}
       {step === "menu" && (
         <div className="flex max-h-[600px] flex-col">
           <div className="border-b border-zinc-200 p-3">
@@ -365,7 +401,7 @@ export default function AddColumnButton({
                     <button
                       key={agent.label}
                       disabled={agent.disabled}
-                      className={`flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-left text-sm text-zinc-700 transition ${agent.hoverBg}`}
+                      className={`flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-left text-sm text-zinc-700 transition ${agent.hoverBg} disabled:cursor-not-allowed disabled:opacity-50`}
                     >
                       <span className={agent.iconColor}>{agent.icon}</span>
                       <span className="text-xs">{agent.label}</span>
@@ -481,7 +517,7 @@ export default function AddColumnButton({
         <Plus size={16} />
       </button>
 
-      {open && createPortal(dropdownContent, document.body)}
+      {open && mounted && createPortal(dropdownContent, document.body)}
     </>
   );
 }

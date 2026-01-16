@@ -10,20 +10,26 @@ type ColumnHeaderMenuProps = {
   columnId: string;
   tableId: string;
   anchorRef: React.RefObject<HTMLElement | null>;
+  columnHeaderRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   onRename: () => void;
-  onInsert: (insert: ColumnInsertPosition) => void;
+  onInsert: (
+    insert: ColumnInsertPosition,
+  ) => void;
 };
 
 export default function ColumnHeaderMenu({
   columnId,
   tableId,
   anchorRef,
+  columnHeaderRef,
   onClose,
   onRename,
   onInsert,
 }: ColumnHeaderMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const insertLeftRef = useRef<HTMLButtonElement>(null);
+  const insertRightRef = useRef<HTMLButtonElement>(null);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
   const utils = api.useUtils();
@@ -34,7 +40,6 @@ export default function ColumnHeaderMenu({
     },
   });
 
-  // Position menu under chevron (centered)
   useEffect(() => {
     if (!anchorRef.current || !menuRef.current) return;
 
@@ -49,7 +54,6 @@ export default function ColumnHeaderMenu({
     setCoords({ top, left });
   }, [anchorRef]);
 
-  // Close on outside click
   useEffect(() => {
     function handle(e: MouseEvent) {
       if (
@@ -87,11 +91,12 @@ export default function ColumnHeaderMenu({
       <div className="my-1 border-t border-zinc-200" />
 
       <button
+        ref={insertLeftRef}
         type="button"
         onClick={() => {
-          console.log("Insert left clicked, columnId:", columnId); // Debug
+          console.log("Insert left clicked, columnId:", columnId);
           onInsert({ type: "before", columnId });
-          onClose(); // Close the menu after calling onInsert
+          onClose();
         }}
         className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
       >
@@ -99,11 +104,12 @@ export default function ColumnHeaderMenu({
       </button>
 
       <button
+        ref={insertRightRef}
         type="button"
         onClick={() => {
-          console.log("Insert right clicked, columnId:", columnId); // Debug
+          console.log("Insert right clicked, columnId:", columnId);
           onInsert({ type: "after", columnId });
-          onClose(); // Close the menu after calling onInsert
+          onClose();
         }}
         className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
       >

@@ -36,7 +36,10 @@ export function createColumns({
   commitEdit: () => void;
   cancelEdit: () => void;
   setDraft: (v: string) => void;
-  onInsert: (insert: ColumnInsertPosition) => void;
+  onInsert: (
+    insert: ColumnInsertPosition,
+    position: { top: number; left: number },
+  ) => void;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 

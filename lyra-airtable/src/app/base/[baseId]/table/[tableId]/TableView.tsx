@@ -2,10 +2,9 @@
 
 import { flexRender } from "@tanstack/react-table";
 import type { Table } from "@tanstack/react-table";
-import type { TableRow } from "./types";
+import type { TableRow, AddColumnState } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
-import type { ColumnInsertPosition } from "./types";
 
 export function TableView({
   table,
@@ -13,7 +12,7 @@ export function TableView({
   onCloseAddColumn,
 }: {
   table: Table<TableRow>;
-  addColumnOpen: ColumnInsertPosition | null;
+  addColumnOpen: AddColumnState;
   onCloseAddColumn: () => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
@@ -36,7 +35,6 @@ export function TableView({
                 </th>
               ))}
 
-              {/* ✅ PERMANENT ADD COLUMN BUTTON (always visible) */}
               <th className="border-b px-2 py-2 text-left font-medium">
                 <AddColumnButton tableId={tableId} />
               </th>
@@ -57,13 +55,13 @@ export function TableView({
         </tbody>
       </table>
 
-      {/* ✅ INSERT LEFT/RIGHT ADD COLUMN BUTTON (opens when you click insert) */}
       {addColumnOpen && (
         <AddColumnButton
           tableId={tableId}
-          insert={addColumnOpen}
+          insert={addColumnOpen.insert}
           onClose={onCloseAddColumn}
           autoOpen
+          initialPosition={addColumnOpen.position}
         />
       )}
     </>

@@ -11,15 +11,15 @@ import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
-import type { SelectedCell, ColumnInsertPosition } from "./types";
+import type { SelectedCell, ColumnInsertPosition, AddColumnState } from "./types";
 
 export default function TableClient() {
   /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
 
-  const [addColumnOpen, setAddColumnOpen] =
-    useState<ColumnInsertPosition | null>(null);
+  // ✅ Use position coordinates instead of ref
+  const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -75,7 +75,12 @@ export default function TableClient() {
         commitEdit: commitEditSafe,
         cancelEdit,
         setDraft,
-        onInsert: setAddColumnOpen,
+        onInsert: (
+          insert: ColumnInsertPosition,
+          position: { top: number; left: number },
+        ) => {
+          setAddColumnOpen({ insert, position });
+        },
       }),
     [
       data,
@@ -86,7 +91,6 @@ export default function TableClient() {
       commitEdit,
       cancelEdit,
       setDraft,
-      setAddColumnOpen,
     ],
   );
 
@@ -117,8 +121,6 @@ export default function TableClient() {
   return (
     <div className="p-6">
       <div className="text-lg font-semibold">{data.table.name}</div>
-
-      {/* ❌ REMOVED - only render in TableView */}
 
       {(localError ?? upsert.error) && (
         <div className="mt-2 text-sm text-red-600">

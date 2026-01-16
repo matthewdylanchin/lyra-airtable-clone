@@ -44,3 +44,8 @@ export type ColumnInsertPosition =
   | { type: "end" }
   | { type: "before"; columnId: string }
   | { type: "after"; columnId: string };
+
+export type AddColumnState = {
+  insert: ColumnInsertPosition;
+  position: { top: number; left: number }; // Position below chevron
+} | null;
