@@ -325,10 +325,7 @@ export default function AddColumnButton({
   );
 
   function handleCreateColumn() {
-    if (!selectedType || colName.trim() === "" || !mounted) {
-      console.log("Validation failed:", { selectedType, colName, mounted });
-      return;
-    }
+    if (!selectedType || colName.trim() === "" || !mounted) return;
 
     const columnData = {
       tableId,
@@ -336,30 +333,23 @@ export default function AddColumnButton({
       type: selectedType,
     };
 
-    console.log("=== CREATING COLUMN ===");
-    console.log("Insert type:", insert.type);
-    console.log("Insert object:", insert);
-    console.log("Column data:", columnData);
+    console.log("Creating column:", { insert, columnData });
 
     if (insert.type === "before" || insert.type === "after") {
       if (!insert.columnId) {
-        console.error("❌ Missing columnId for insert position");
+        console.error("Missing columnId for insert position");
         return;
       }
 
-      const mutationData = {
+      void insertColumn.mutate({
         tableId: columnData.tableId,
         anchorColumnId: insert.columnId,
         position: insert.type,
         name: columnData.name,
         type: columnData.type,
-      };
-
-      console.log("📤 Calling insertColumn.mutate with:", mutationData);
-      insertColumn.mutate(mutationData);
+      });
     } else {
-      console.log("📤 Calling createColumn.mutate with:", columnData);
-      createColumn.mutate(columnData);
+      void createColumn.mutate(columnData);
     }
   }
 

@@ -214,7 +214,7 @@ export default function EditFieldPopover({
 
         <button
           onClick={() =>
-            renameColumn.mutate({
+            void renameColumn.mutate({
               id: column.id,
               name,
             })

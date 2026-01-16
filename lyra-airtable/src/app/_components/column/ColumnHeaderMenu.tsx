@@ -229,7 +229,7 @@ export default function ColumnHeaderMenu({
       </button>
 
       <button
-        onClick={() => deleteColumn.mutate({ columnId })}
+        onClick={() => void deleteColumn.mutate({ columnId })}
         className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
       >
         <Trash2 size={16} />
