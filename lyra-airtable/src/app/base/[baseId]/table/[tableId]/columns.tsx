@@ -58,7 +58,7 @@ export function createColumns({
       /** ⭐ Use ColumnHeader component */
       header: () => (
         <ColumnHeader
-          column={{ id: c.id, name: c.name }}
+          column={{ id: c.id, name: c.name, type: c.type }}
           tableId={data.table.id}
         />
       ),

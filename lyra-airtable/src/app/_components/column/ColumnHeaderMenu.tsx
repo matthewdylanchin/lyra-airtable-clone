@@ -5,17 +5,21 @@ import { createPortal } from "react-dom";
 import { Pencil, Trash2 } from "lucide-react";
 import { api } from "@/trpc/react";
 
-export default function ColumnHeaderMenu({
-  columnId,
-  onClose,
-  anchorRef,
-  tableId,
-}: {
+type ColumnHeaderMenuProps = {
   columnId: string;
   tableId: string;
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
-}) {
+  onRename: () => void;
+};
+
+export default function ColumnHeaderMenu({
+  columnId,
+  tableId,
+  anchorRef,
+  onClose,
+  onRename,
+}: ColumnHeaderMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
@@ -27,15 +31,19 @@ export default function ColumnHeaderMenu({
     },
   });
 
-  // Position menu based on the header button
+  // Position menu under chevron (centered)
   useEffect(() => {
-    if (!anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
+    if (!anchorRef.current || !menuRef.current) return;
 
-    setCoords({
-      top: rect.bottom + 4,
-      left: rect.left,
-    });
+    const rect = anchorRef.current.getBoundingClientRect();
+    const menuRect = menuRef.current.getBoundingClientRect();
+
+    const GAP = 6;
+
+    const top = rect.bottom + GAP;
+    const left = rect.left + rect.width / 2 - menuRect.width / 2;
+
+    setCoords({ top, left });
   }, []);
 
   // Close on outside click
@@ -51,7 +59,7 @@ export default function ColumnHeaderMenu({
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
-  }, [onClose]);
+  }, [onClose, anchorRef]);
 
   const menu = (
     <div
@@ -62,7 +70,13 @@ export default function ColumnHeaderMenu({
         left: coords.left,
       }}
     >
-      <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-100">
+      <button
+        onClick={() => {
+          onRename();
+          onClose();
+        }}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-100"
+      >
         <Pencil size={14} />
         Edit field
       </button>
