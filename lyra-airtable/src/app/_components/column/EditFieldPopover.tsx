@@ -85,7 +85,7 @@ export default function EditFieldPopover({
   const utils = api.useUtils();
   const renameColumn = api.column.rename.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       onClose();
     },
   });

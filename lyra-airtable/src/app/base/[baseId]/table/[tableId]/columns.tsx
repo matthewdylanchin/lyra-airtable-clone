@@ -5,7 +5,6 @@ import type {
   CellValue,
   Editing,
   SelectedCell,
-  ColumnMeta,
 } from "./types";
 import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";

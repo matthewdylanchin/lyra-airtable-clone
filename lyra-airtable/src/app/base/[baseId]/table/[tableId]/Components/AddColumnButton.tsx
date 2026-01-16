@@ -187,7 +187,7 @@ export default function AddColumnButton({
 
   const createColumn = api.column.create.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       reset();
     },
     onError: (error) => {
@@ -197,7 +197,7 @@ export default function AddColumnButton({
 
   const insertColumn = api.column.insertAtPosition.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       reset();
     },
     onError: (error) => {
@@ -238,7 +238,7 @@ export default function AddColumnButton({
         left = initialPosition.left;
       } else {
         // Calculate from ref (for regular "+" button clicks)
-        const refToUse = targetColumnRef?.current || buttonRef.current;
+        const refToUse = targetColumnRef?.current ?? buttonRef.current;
         if (!refToUse) return;
 
         const rect = refToUse.getBoundingClientRect();

@@ -49,7 +49,7 @@ export default function ColumnHeaderMenu({
   const utils = api.useUtils();
   const deleteColumn = api.column.delete.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       onClose();
     },
   });
