@@ -23,16 +23,19 @@ export type SelectedCell = {
   colIndex: number;
 } | null;
 
-export type CellUpsertInput =
-  RouterInputs["cell"]["upsertValue"];
+export type CellUpsertInput = RouterInputs["cell"]["upsertValue"];
 
-export type CellUpsertOutput =
-  RouterOutputs["cell"]["upsertValue"];
+export type CellUpsertOutput = RouterOutputs["cell"]["upsertValue"];
 
-export type CellUpsertMutation =
-  UseMutationResult<
-    CellUpsertOutput,
-    unknown,
-    CellUpsertInput,
-    unknown
-  >;
+export type CellUpsertMutation = UseMutationResult<
+  CellUpsertOutput,
+  unknown,
+  CellUpsertInput,
+  unknown
+>;
+
+export type ColumnMeta = {
+  id: string;
+  name: string;
+  type: string; // "TEXT" | "NUMBER"
+};

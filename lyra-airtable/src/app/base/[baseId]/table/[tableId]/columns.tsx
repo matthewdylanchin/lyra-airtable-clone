@@ -5,8 +5,10 @@ import type {
   CellValue,
   Editing,
   SelectedCell,
+  ColumnMeta,
 } from "./types";
 import { cn } from "@/lib/utils";
+import ColumnHeader from "@/app/_components/column/ColumnHeader";
 
 export function createColumns({
   data,
@@ -19,7 +21,7 @@ export function createColumns({
   cancelEdit,
   setDraft,
 }: {
-  data: TableData | undefined; // ✅ allow undefined
+  data: TableData | undefined;
   editing: Editing;
   draft: string;
   selectedCell: SelectedCell;
@@ -33,7 +35,7 @@ export function createColumns({
   cancelEdit: () => void;
   setDraft: (v: string) => void;
 }): ColumnDef<TableRow, CellValue>[] {
-  if (!data) return []; // ✅ explicit guard
+  if (!data) return [];
 
   return [
     {
@@ -41,10 +43,25 @@ export function createColumns({
       header: "#",
       cell: (info) => info.row.index + 1,
     },
+
     ...data.columns.map((c) => ({
       id: c.id,
-      header: c.name,
       accessorFn: (row: TableRow) => row[c.id] ?? null,
+
+      /** ⭐ Add full meta so the header menu works */
+      meta: {
+        id: c.id,
+        name: c.name,
+        type: c.type,
+      },
+
+      /** ⭐ Use ColumnHeader component */
+      header: () => (
+        <ColumnHeader
+          column={{ id: c.id, name: c.name }}
+          tableId={data.table.id}
+        />
+      ),
       cell: (info: CellContext<TableRow, CellValue>) => {
         const value = info.getValue();
         const rowId = info.row.original.__rowId;
@@ -57,6 +74,8 @@ export function createColumns({
 
         const isEditing =
           editing?.rowId === rowId && editing?.columnId === c.id;
+
+        const isNumberCol = c.type === "NUMBER";
 
         return (
           <div
@@ -72,7 +91,20 @@ export function createColumns({
               <input
                 autoFocus
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+
+                  // ⭐ NUMBER COLUMN VALIDATION
+                  if (isNumberCol) {
+                    // Allow: digits, optional decimal
+                    if (/^-?\d*\.?\d*$/.test(val)) {
+                      setDraft(val);
+                    }
+                    return;
+                  }
+
+                  setDraft(val);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();

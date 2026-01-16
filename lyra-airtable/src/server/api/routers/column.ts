@@ -67,14 +67,14 @@ export const columnRouter = createTRPCRouter({
    * DELETE COLUMN
    * ----------------------------------------- */
   delete: protectedProcedure
-    .input(z.string())
-    .mutation(async ({ ctx, input: columnId }) => {
-      // delete all cells in the column
+    .input(z.object({ columnId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const { columnId } = input;
+
       await ctx.db.cell.deleteMany({
         where: { columnId },
       });
 
-      // delete the column itself
       await ctx.db.column.delete({
         where: { id: columnId },
       });
