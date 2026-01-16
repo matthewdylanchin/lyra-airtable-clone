@@ -54,6 +54,10 @@ export const rowRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  /** -----------------------------------------
+   * ADD ROW (alias for create)
+   * ----------------------------------------- */
+
   add: protectedProcedure
     .input(
       z.object({
@@ -92,6 +96,76 @@ export const rowRouter = createTRPCRouter({
       });
 
       return row;
+    }),
+  /** -----------------------------------------
+   * INSERT ROW AT POSITION
+   * ----------------------------------------- */
+
+  insertAtPosition: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+        anchorRowId: z.string(),
+        position: z.enum(["above", "below"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { tableId, anchorRowId, position } = input;
+
+      // 1. Find the anchor row
+      const anchor = await ctx.db.row.findUnique({
+        where: { id: anchorRowId },
+      });
+
+      if (!anchor) {
+        throw new Error("Anchor row not found");
+      }
+
+      const anchorIndex = anchor.rowIndex;
+      const newIndex = position === "above" ? anchorIndex : anchorIndex + 1;
+
+      return ctx.db.$transaction(async (tx) => {
+        // 2. Shift all rows at or after newIndex
+        await tx.row.updateMany({
+          where: {
+            tableId,
+            rowIndex: {
+              gte: newIndex,
+            },
+          },
+          data: {
+            rowIndex: {
+              increment: 1,
+            },
+          },
+        });
+
+        // 3. Create the new row
+        const newRow = await tx.row.create({
+          data: {
+            tableId,
+            rowIndex: newIndex,
+          },
+        });
+
+        // 4. Create empty cells for all columns in this table
+        const columns = await tx.column.findMany({
+          where: { tableId },
+          select: { id: true },
+        });
+
+        if (columns.length > 0) {
+          await tx.cell.createMany({
+            data: columns.map((c) => ({
+              rowId: newRow.id,
+              columnId: c.id,
+              textValue: "",
+            })),
+          });
+        }
+
+        return newRow;
+      });
     }),
 
   /** -----------------------------------------
