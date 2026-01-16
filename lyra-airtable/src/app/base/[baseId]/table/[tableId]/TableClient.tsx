@@ -11,12 +11,15 @@ import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
-import type { SelectedCell } from "./types";
+import type { SelectedCell, ColumnInsertPosition, AddColumnState } from "./types";
 
 export default function TableClient() {
   /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+
+  // ✅ Use position coordinates instead of ref
+  const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -69,9 +72,15 @@ export default function TableClient() {
         selectedCell,
         setSelectedCell,
         startEdit,
-        commitEdit : commitEditSafe, 
+        commitEdit: commitEditSafe,
         cancelEdit,
         setDraft,
+        onInsert: (
+          insert: ColumnInsertPosition,
+          position: { top: number; left: number },
+        ) => {
+          setAddColumnOpen({ insert, position });
+        },
       }),
     [
       data,
@@ -120,7 +129,11 @@ export default function TableClient() {
       )}
 
       <div className="mt-4 overflow-auto rounded-md border border-zinc-200">
-        <TableView table={table} />
+        <TableView
+          table={table}
+          addColumnOpen={addColumnOpen}
+          onCloseAddColumn={() => setAddColumnOpen(null)}
+        />
       </div>
     </div>
   );

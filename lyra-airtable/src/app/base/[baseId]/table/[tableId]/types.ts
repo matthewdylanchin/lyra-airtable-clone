@@ -23,16 +23,29 @@ export type SelectedCell = {
   colIndex: number;
 } | null;
 
-export type CellUpsertInput =
-  RouterInputs["cell"]["upsertValue"];
+export type CellUpsertInput = RouterInputs["cell"]["upsertValue"];
 
-export type CellUpsertOutput =
-  RouterOutputs["cell"]["upsertValue"];
+export type CellUpsertOutput = RouterOutputs["cell"]["upsertValue"];
 
-export type CellUpsertMutation =
-  UseMutationResult<
-    CellUpsertOutput,
-    unknown,
-    CellUpsertInput,
-    unknown
-  >;
+export type CellUpsertMutation = UseMutationResult<
+  CellUpsertOutput,
+  unknown,
+  CellUpsertInput,
+  unknown
+>;
+
+export type ColumnMeta = {
+  id: string;
+  name: string;
+  type: string; // "TEXT" | "NUMBER"
+};
+
+export type ColumnInsertPosition =
+  | { type: "end" }
+  | { type: "before"; columnId: string }
+  | { type: "after"; columnId: string };
+
+export type AddColumnState = {
+  insert: ColumnInsertPosition;
+  position: { top: number; left: number }; // Position below chevron
+} | null;
