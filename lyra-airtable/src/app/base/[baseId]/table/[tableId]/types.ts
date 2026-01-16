@@ -39,3 +39,8 @@ export type ColumnMeta = {
   name: string;
   type: string; // "TEXT" | "NUMBER"
 };
+
+export type ColumnInsertPosition =
+  | { type: "end" }
+  | { type: "before"; columnId: string }
+  | { type: "after"; columnId: string };

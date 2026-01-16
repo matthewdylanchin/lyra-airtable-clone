@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, Trash2 } from "lucide-react";
 import { api } from "@/trpc/react";
+import type { ColumnInsertPosition } from "@/app/base/[baseId]/table/[tableId]/types";
 
 type ColumnHeaderMenuProps = {
   columnId: string;
@@ -11,6 +12,7 @@ type ColumnHeaderMenuProps = {
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   onRename: () => void;
+  onInsert: (insert: ColumnInsertPosition) => void;
 };
 
 export default function ColumnHeaderMenu({
@@ -19,6 +21,7 @@ export default function ColumnHeaderMenu({
   anchorRef,
   onClose,
   onRename,
+  onInsert,
 }: ColumnHeaderMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -79,6 +82,30 @@ export default function ColumnHeaderMenu({
       >
         <Pencil size={14} />
         Edit field
+      </button>
+
+      <div className="my-1 border-t border-zinc-200" />
+
+      <button
+        type="button"
+        onClick={() => {
+          onInsert({ type: "before", columnId });
+          onClose();
+        }}
+        className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
+      >
+        Insert left
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          onInsert({ type: "after", columnId });
+          onClose();
+        }}
+        className="flex w-full items-center px-3 py-2 text-left text-sm hover:bg-zinc-100"
+      >
+        Insert right
       </button>
 
       <div className="my-1 border-t border-zinc-200" />

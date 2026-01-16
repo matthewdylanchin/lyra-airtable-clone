@@ -5,8 +5,18 @@ import type { Table } from "@tanstack/react-table";
 import type { TableRow } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
+import type { ColumnInsertPosition } from "./types";
+import { useState } from "react";
 
-export function TableView({ table }: { table: Table<TableRow> }) {
+export function TableView({
+  table,
+  addColumnOpen,
+  onCloseAddColumn,
+}: {
+  table: Table<TableRow>;
+  addColumnOpen: ColumnInsertPosition | null;
+  onCloseAddColumn: () => void;
+}) {
   const { tableId } = useParams<{ tableId: string }>();
 
   return (
@@ -29,7 +39,14 @@ export function TableView({ table }: { table: Table<TableRow> }) {
 
             {/* ADD COLUMN BUTTON */}
             <th className="border-b px-2 py-2 text-left font-medium">
-              <AddColumnButton tableId={tableId} />
+              {addColumnOpen && (
+                <AddColumnButton
+                  tableId={tableId}
+                  insert={addColumnOpen}
+                  onClose={onCloseAddColumn}
+                  autoOpen
+                />
+              )}
             </th>
           </tr>
         ))}

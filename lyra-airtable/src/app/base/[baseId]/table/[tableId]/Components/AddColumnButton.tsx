@@ -30,6 +30,7 @@ import {
   TextInitial,
   CircleArrowDown,
 } from "lucide-react";
+import type { ColumnInsertPosition } from "../types";
 
 // Field agents (AI features) with colors
 const fieldAgents = [
@@ -147,7 +148,17 @@ const standardFields = [
   { label: "Rating", icon: <Star size={16} />, type: null, disabled: true },
 ];
 
-export default function AddColumnButton({ tableId }: { tableId: string }) {
+export default function AddColumnButton({
+  tableId,
+  insert,
+  onClose,
+  autoOpen = false,
+}: {
+  tableId: string;
+  insert: ColumnInsertPosition;
+  onClose: () => void;
+  autoOpen?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
   const [search, setSearch] = useState("");
@@ -172,8 +183,13 @@ export default function AddColumnButton({ tableId }: { tableId: string }) {
       setSelectedType(null);
       setStep("menu");
       setSearch("");
+      onClose();
     },
   });
+
+  useEffect(() => {
+    if (autoOpen) setOpen(true);
+  }, [autoOpen]);
 
   // Calculate dropdown position when opening
   useEffect(() => {
@@ -351,11 +367,20 @@ export default function AddColumnButton({ tableId }: { tableId: string }) {
             <button
               onClick={() => {
                 if (!selectedType || colName.trim() === "") return;
-                createColumn.mutate({
+                // createColumn.mutate({
+                //   tableId,
+                //   insert,
+                //   name: colName.trim(),
+                //   type: selectedType,
+                // });
+
+                const payload = {
                   tableId,
                   name: colName.trim(),
                   type: selectedType,
-                });
+                };
+
+                createColumn.mutate(payload);
               }}
               disabled={!selectedType || colName.trim() === ""}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"

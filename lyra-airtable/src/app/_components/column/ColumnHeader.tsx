@@ -4,13 +4,16 @@ import { useState, useRef } from "react";
 import ColumnHeaderMenu from "./ColumnHeaderMenu";
 import EditFieldPopover from "./EditFieldPopover";
 import { ChevronDown } from "lucide-react";
+import type { ColumnInsertPosition } from "@/app/base/[baseId]/table/[tableId]/types";
 
 export default function ColumnHeader({
   column,
   tableId,
+  onInsert,
 }: {
   column: { id: string; name: string; type: string };
   tableId: string;
+  onInsert: (insert: ColumnInsertPosition) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editFieldOpen, setEditFieldOpen] = useState(false);
@@ -44,10 +47,8 @@ export default function ColumnHeader({
             tableId={tableId}
             anchorRef={buttonRef}
             onClose={() => setMenuOpen(false)}
-            onRename={() => {
-              setMenuOpen(false);
-              setEditFieldOpen(true);
-            }}
+            onRename={() => setEditFieldOpen(true)}
+            onInsert={onInsert}
           />
         )}
       </div>

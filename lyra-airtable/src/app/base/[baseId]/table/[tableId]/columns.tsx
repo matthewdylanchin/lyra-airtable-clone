@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
+import type { ColumnInsertPosition } from "./types";
 
 export function createColumns({
   data,
@@ -20,6 +21,7 @@ export function createColumns({
   commitEdit,
   cancelEdit,
   setDraft,
+  onInsert,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -34,6 +36,7 @@ export function createColumns({
   commitEdit: () => void;
   cancelEdit: () => void;
   setDraft: (v: string) => void;
+  onInsert: (insert: ColumnInsertPosition) => void;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -60,6 +63,7 @@ export function createColumns({
         <ColumnHeader
           column={{ id: c.id, name: c.name, type: c.type }}
           tableId={data.table.id}
+          onInsert={onInsert}
         />
       ),
       cell: (info: CellContext<TableRow, CellValue>) => {
