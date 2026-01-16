@@ -5,6 +5,8 @@ import type { Table } from "@tanstack/react-table";
 import type { TableRow, AddColumnState } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
+import type { ColumnInsertPosition } from "./types";
+import { api } from "@/trpc/react"; // ✅ add this
 
 export function TableView({
   table,
@@ -16,6 +18,15 @@ export function TableView({
   onCloseAddColumn: () => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
+
+  const utils = api.useUtils();
+  const addRow = api.row.add.useMutation({
+    onSuccess: () => {
+      void utils.table.getData.invalidate({ tableId, limit: 50 });
+    },
+  });
+
+  const visibleCols = table.getVisibleLeafColumns().length;
 
   return (
     <>
@@ -35,6 +46,7 @@ export function TableView({
                 </th>
               ))}
 
+              {/* ADD COLUMN BUTTON */}
               <th className="border-b px-2 py-2 text-left font-medium">
                 <AddColumnButton tableId={tableId} />
               </th>
@@ -52,9 +64,28 @@ export function TableView({
               ))}
             </tr>
           ))}
+
+          {/* Add row bar */}
+          <tr>
+            <td
+              colSpan={visibleCols + 1} // existing cols + the extra header col
+              className="px-2 py-2 text-left"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  void addRow.mutate({ tableId });
+                }}
+                disabled={addRow.isPending}
+                className="inline-flex items-center gap-2 rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="text-base leading-none">＋</span>
+                <span>{addRow.isPending ? "Adding row…" : "Add row"}</span>
+              </button>
+            </td>
+          </tr>
         </tbody>
       </table>
-
       {addColumnOpen && (
         <AddColumnButton
           tableId={tableId}

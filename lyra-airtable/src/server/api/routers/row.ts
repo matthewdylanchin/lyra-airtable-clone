@@ -9,7 +9,7 @@ export const rowRouter = createTRPCRouter({
     .input(
       z.object({
         tableId: z.string(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const rowCount = await ctx.db.row.count({
@@ -54,6 +54,46 @@ export const rowRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  add: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { tableId } = input;
+
+      // 1. Find next rowIndex (append at end)
+      const rowIndex = await ctx.db.row.count({
+        where: { tableId },
+      });
+
+      // 2. Create the row
+      const row = await ctx.db.row.create({
+        data: {
+          tableId,
+          rowIndex,
+        },
+        select: { id: true },
+      });
+
+      // 3. Create empty cells for every existing column
+      const columns = await ctx.db.column.findMany({
+        where: { tableId },
+        select: { id: true },
+      });
+
+      await ctx.db.cell.createMany({
+        data: columns.map((c) => ({
+          rowId: row.id,
+          columnId: c.id,
+          textValue: "",
+        })),
+      });
+
+      return row;
+    }),
+
   /** -----------------------------------------
    * REORDER ROWS (future use)
    * ----------------------------------------- */
@@ -62,14 +102,14 @@ export const rowRouter = createTRPCRouter({
       z.object({
         tableId: z.string(),
         order: z.array(z.object({ id: z.string(), rowIndex: z.number() })),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const updates = input.order.map(({ id, rowIndex }) =>
         ctx.db.row.update({
           where: { id },
           data: { rowIndex },
-        })
+        }),
       );
 
       await ctx.db.$transaction(updates);
