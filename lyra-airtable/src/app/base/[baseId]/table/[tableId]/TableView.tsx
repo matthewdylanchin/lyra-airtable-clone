@@ -33,14 +33,14 @@ export function TableView({
   // Append at bottom (used by "+ Add row")
   const appendRow = api.row.create.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
     },
   });
 
   // Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       setRowMenu(null);
     },
   });
@@ -48,7 +48,7 @@ export function TableView({
   // Delete row
   const deleteRow = api.row.delete.useMutation({
     onSuccess: () => {
-      utils.table.getData.invalidate({ tableId });
+      void utils.table.getData.invalidate({ tableId });
       setRowMenu(null);
     },
   });
