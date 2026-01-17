@@ -11,7 +11,11 @@ import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
-import type { SelectedCell, ColumnInsertPosition, AddColumnState } from "./types";
+import type {
+  SelectedCell,
+  ColumnInsertPosition,
+  AddColumnState,
+} from "./types";
 
 export default function TableClient() {
   /* ---------- Routing ---------- */
@@ -112,28 +116,49 @@ export default function TableClient() {
   });
 
   /* ---------- Loading / error ---------- */
-  if (q.isLoading) return <div className="p-6">Loading…</div>;
-  if (q.error)
-    return <div className="p-6 text-sm text-red-600">{q.error.message}</div>;
-  if (!data) return <div className="p-6">No data</div>;
+  if (q.isLoading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-sm text-gray-600">Loading…</div>
+      </div>
+    );
+  }
+
+  if (q.error) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-sm text-red-600">{q.error.message}</div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-sm text-gray-600">No data</div>
+      </div>
+    );
+  }
 
   /* ---------- Render ---------- */
   return (
-    <div className="p-6">
-      <div className="text-lg font-semibold">{data.table.name}</div>
-
+    <div className="flex h-full flex-col">
+      {/* Error banner - only shows if there's an error */}
       {(localError ?? upsert.error) && (
-        <div className="mt-2 text-sm text-red-600">
+        <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
           {localError ?? upsert.error?.message}
         </div>
       )}
 
-      <div className="mt-4 overflow-auto rounded-md border border-zinc-200">
+      {/* Table - fills remaining space */}
+      <div className="min-h-0 flex-1">
         <TableView
           table={table}
           addColumnOpen={addColumnOpen}
           onCloseAddColumn={() => setAddColumnOpen(null)}
-        />
+          focusedRowIndex={selectedCell?.rowIndex ?? null}
+          focusedColumnIndex={selectedCell?.colIndex ?? null}
+        />;
       </div>
     </div>
   );

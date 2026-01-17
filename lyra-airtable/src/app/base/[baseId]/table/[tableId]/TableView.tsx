@@ -7,6 +7,7 @@ import type { TableRow, AddColumnState } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 type RowContextMenuState = {
   rowId: string;
@@ -19,13 +20,16 @@ export function TableView({
   table,
   addColumnOpen,
   onCloseAddColumn,
+  focusedRowIndex,
+  focusedColumnIndex,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
   onCloseAddColumn: () => void;
+  focusedRowIndex?: number | null;
+  focusedColumnIndex?: number | null;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
-
   const utils = api.useUtils();
 
   /* ---------- Row mutations ---------- */
@@ -97,92 +101,317 @@ export function TableView({
 
     void deleteRow.mutate(rowMenu.rowId);
   };
+
   const handleAddRow = () => {
     void appendRow.mutate({ tableId });
   };
 
-  const visibleColumnCount = table.getVisibleLeafColumns().length + 1; // +1 for the add-column header
+  const rows = table.getRowModel().rows;
+  const headerGroups = table.getHeaderGroups();
+  const visibleColumns = table.getVisibleLeafColumns();
+
+  /* ---------- Virtualization ---------- */
+
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLTableSectionElement | null>(null);
+  const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const cellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
+
+  // Add 1 to count for the "Add row" button row
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length + 1, // +1 for the add row button
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 33, // estimated row height in px (Airtable-style)
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? totalSize - virtualRows[virtualRows.length - 1]!.end
+      : 0;
+
+  /* ---------- Vertical scrolling (existing) ---------- */
+  useEffect(() => {
+    if (focusedRowIndex == null) return;
+    if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
+
+    const container = tableContainerRef.current;
+    const header = headerRef.current;
+    const focusedRowElement = rowRefs.current.get(focusedRowIndex);
+
+    if (!container || !header || !focusedRowElement) {
+      // Row not rendered yet, use virtualizer fallback
+      rowVirtualizer.scrollToIndex(focusedRowIndex, { align: "auto" });
+      return;
+    }
+
+    // Get the actual positions from the DOM
+    const containerRect = container.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    const rowRect = focusedRowElement.getBoundingClientRect();
+
+    // Calculate visible area (excluding header)
+    const visibleTop = containerRect.top + headerRect.height;
+    const visibleBottom = containerRect.bottom;
+
+    // Check if row is fully visible
+    const isFullyVisible =
+      rowRect.top >= visibleTop && rowRect.bottom <= visibleBottom;
+
+    if (isFullyVisible) {
+      return;
+    }
+
+    // Calculate how much to scroll
+    const currentScrollTop = container.scrollTop;
+    let newScrollTop = currentScrollTop;
+
+    if (rowRect.top < visibleTop) {
+      // Row is cut off at top - scroll up just enough to show it
+      const difference = visibleTop - rowRect.top;
+      newScrollTop = currentScrollTop - difference;
+    } else if (rowRect.bottom > visibleBottom) {
+      // Row is cut off at bottom - scroll down just enough to show it
+      const difference = rowRect.bottom - visibleBottom;
+      newScrollTop = currentScrollTop + difference;
+    }
+
+    container.scrollTop = newScrollTop;
+  }, [focusedRowIndex, rows.length, rowVirtualizer]);
+
+  /* ---------- Horizontal scrolling (NEW!) ---------- */
+  useEffect(() => {
+    if (focusedRowIndex == null || focusedColumnIndex == null) return;
+    if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
+    if (focusedColumnIndex < 0 || focusedColumnIndex >= visibleColumns.length)
+      return;
+
+    const container = tableContainerRef.current;
+    const cellKey = `${focusedRowIndex}-${focusedColumnIndex}`;
+    const focusedCellElement = cellRefs.current.get(cellKey);
+
+    if (!container || !focusedCellElement) {
+      return;
+    }
+
+    // Get the actual positions from the DOM
+    const containerRect = container.getBoundingClientRect();
+    const cellRect = focusedCellElement.getBoundingClientRect();
+
+    // Calculate visible area (horizontal)
+    const visibleLeft = containerRect.left;
+    const visibleRight = containerRect.right;
+
+    // Check if cell is fully visible horizontally
+    const isFullyVisible =
+      cellRect.left >= visibleLeft && cellRect.right <= visibleRight;
+
+    console.log("Horizontal Scroll Check:", {
+      focusedColumnIndex,
+      cellLeft: cellRect.left,
+      cellRight: cellRect.right,
+      visibleLeft,
+      visibleRight,
+      isFullyVisible,
+      cellWidth: cellRect.width,
+    });
+
+    if (isFullyVisible) {
+      console.log("✅ Cell fully visible horizontally - no scroll");
+      return;
+    }
+
+    // Calculate how much to scroll
+    const currentScrollLeft = container.scrollLeft;
+    let newScrollLeft = currentScrollLeft;
+
+    if (cellRect.left < visibleLeft) {
+      // Cell is cut off on left - scroll left to show it
+      const difference = visibleLeft - cellRect.left;
+      newScrollLeft = currentScrollLeft - difference;
+      console.log("⬅️ Scrolling LEFT by", difference, "px to:", newScrollLeft);
+    } else if (cellRect.right > visibleRight) {
+      // Cell is cut off on right - scroll right to show it
+      const difference = cellRect.right - visibleRight;
+      newScrollLeft = currentScrollLeft + difference;
+      console.log("➡️ Scrolling RIGHT by", difference, "px to:", newScrollLeft);
+    }
+
+    container.scrollLeft = newScrollLeft;
+  }, [focusedRowIndex, focusedColumnIndex, rows.length, visibleColumns.length]);
 
   /* ---------- Render ---------- */
 
   return (
-    <>
-      <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 bg-zinc-50">
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              {hg.headers.map((header) => (
-                <th
-                  key={header.id}
-                  className="border-b px-2 py-2 text-left font-medium whitespace-nowrap"
-                >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      {/* Scrollable container for both header and body - with horizontal scroll */}
+      <div ref={tableContainerRef} className="h-full overflow-auto">
+        <table
+          className="w-full border-collapse"
+          style={{ minWidth: "max-content" }}
+        >
+          {/* Fixed header with sticky positioning */}
+          <thead
+            ref={headerRef}
+            className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50"
+          >
+            {headerGroups.map((hg) => (
+              <tr key={hg.id}>
+                {hg.headers.map((header) => {
+                  const columnDef = header.column.columnDef;
+                  const width = columnDef.size ?? 150;
+
+                  return (
+                    <th
+                      key={header.id}
+                      className="border-r border-gray-200 px-3 py-2 text-left text-xs font-medium text-gray-600 last:border-r-0"
+                      style={{
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`,
+                      }}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </th>
+                  );
+                })}
+                <th className="sticky right-0 w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
+                  <AddColumnButton tableId={tableId} />
                 </th>
-              ))}
-
-              <th className="border-b px-2 py-2 text-left font-medium">
-                <AddColumnButton tableId={tableId} />
-              </th>
-            </tr>
-          ))}
-        </thead>
-
-        <tbody>
-          {table.getRowModel().rows.map((row) => {
-            const rowId = row.original.__rowId;
-
-            return (
-              <tr key={row.id} className="border-b">
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className="px-1"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setRowMenu({
-                        rowId,
-                        rowIndex: row.index,
-                        x: e.clientX,
-                        y: e.clientY,
-                      });
-                    }}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
               </tr>
-            );
-          })}
+            ))}
+          </thead>
 
-          {/* Airtable-style "+ Add row" bar */}
-          <tr className="border-t">
-            <td
-              colSpan={visibleColumnCount}
-              className="px-3 py-2 text-left text-sm"
-            >
-              <button
-                type="button"
-                onClick={handleAddRow}
-                className="inline-flex cursor-pointer items-center gap-2 text-zinc-600 hover:text-zinc-900"
-              >
-                <span className="text-lg leading-none">+</span>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+          <tbody>
+            {/* Top spacer for virtualization */}
+            {paddingTop > 0 && (
+              <tr>
+                <td style={{ height: paddingTop }} />
+              </tr>
+            )}
+
+            {/* Virtualized rows */}
+            {virtualRows.map((virtualRow) => {
+              // Check if this is the "Add row" button row
+              if (virtualRow.index === rows.length) {
+                return (
+                  <tr
+                    key="add-row"
+                    className="border-t border-gray-200 bg-gray-50"
+                  >
+                    <td
+                      colSpan={visibleColumns.length + 1}
+                      className="px-3 py-2 text-left"
+                    >
+                      <button
+                        type="button"
+                        onClick={handleAddRow}
+                        className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
+
+              const row = rows[virtualRow.index];
+              if (!row) return null;
+
+              const rowId = row.original.__rowId;
+              const rowIndex = virtualRow.index;
+
+              return (
+                <tr
+                  key={row.id}
+                  ref={(el) => {
+                    if (el) {
+                      rowRefs.current.set(rowIndex, el);
+                    } else {
+                      rowRefs.current.delete(rowIndex);
+                    }
+                  }}
+                  className="border-b border-gray-200 transition-colors hover:bg-gray-50"
+                >
+                  {row.getVisibleCells().map((cell, cellIndex) => {
+                    const columnDef = cell.column.columnDef;
+                    const width = columnDef.size ?? 150;
+                    const cellKey = `${rowIndex}-${cellIndex}`;
+
+                    return (
+                      <td
+                        key={cell.id}
+                        ref={(el) => {
+                          if (el) {
+                            cellRefs.current.set(cellKey, el);
+                          } else {
+                            cellRefs.current.delete(cellKey);
+                          }
+                        }}
+                        className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
+                        style={{
+                          width: `${width}px`,
+                          minWidth: `${width}px`,
+                          maxWidth: `${width}px`,
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setRowMenu({
+                            rowId,
+                            rowIndex: row.index,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="w-12 max-w-12 min-w-12 px-3 py-2"></td>
+                </tr>
+              );
+            })}
+
+            {/* Bottom spacer for virtualization */}
+            {paddingBottom > 0 && (
+              <tr>
+                <td style={{ height: paddingBottom }} />
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {/* Right-click row context menu - Airtable style */}
       {rowMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          className="fixed z-[10000] w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={{ top: rowMenu.y, left: rowMenu.x }}
         >
-          {/* Ask Omni - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -202,8 +431,6 @@ export function TableView({
             </svg>
             <span>Ask Omni...</span>
           </button>
-
-          {/* Insert record above - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("above")}
@@ -224,8 +451,6 @@ export function TableView({
             </svg>
             <span>Insert record above</span>
           </button>
-
-          {/* Insert record below - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("below")}
@@ -246,8 +471,6 @@ export function TableView({
             </svg>
             <span>Insert record below</span>
           </button>
-
-          {/* Duplicate record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -267,8 +490,6 @@ export function TableView({
             </svg>
             <span>Duplicate record</span>
           </button>
-
-          {/* Apply template - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -288,8 +509,6 @@ export function TableView({
             </svg>
             <span>Apply template</span>
           </button>
-
-          {/* Expand record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -309,11 +528,7 @@ export function TableView({
             </svg>
             <span>Expand record</span>
           </button>
-
-          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
-
-          {/* Add comment - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -333,8 +548,6 @@ export function TableView({
             </svg>
             <span>Add comment</span>
           </button>
-
-          {/* Copy cell URL - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -354,8 +567,6 @@ export function TableView({
             </svg>
             <span>Copy cell URL</span>
           </button>
-
-          {/* Send record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -375,11 +586,7 @@ export function TableView({
             </svg>
             <span>Send record</span>
           </button>
-
-          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
-
-          {/* Delete record - Functional */}
           <button
             type="button"
             onClick={handleDelete}
@@ -395,7 +602,7 @@ export function TableView({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                d="M19 7l-.867 12.142A2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               />
             </svg>
             <span>Delete record</span>
@@ -413,6 +620,6 @@ export function TableView({
           initialPosition={addColumnOpen.position}
         />
       )}
-    </>
+    </div>
   );
 }

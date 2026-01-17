@@ -12,22 +12,29 @@ export const rowRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const rowCount = await ctx.db.row.count({
-        where: { tableId: input.tableId },
+      const { tableId } = input;
+
+      // Find current max rowIndex for this table
+      const lastRow = await ctx.db.row.findFirst({
+        where: { tableId },
+        orderBy: { rowIndex: "desc" },
+        select: { rowIndex: true },
       });
+
+      const nextIndex = lastRow ? lastRow.rowIndex + 1 : 0;
 
       // Create new row at bottom
       const row = await ctx.db.row.create({
         data: {
-          tableId: input.tableId,
-          rowIndex: rowCount,
+          tableId,
+          rowIndex: nextIndex,
         },
         select: { id: true },
       });
 
-      // Fill new row with new empty cells
+      // Fill new row with empty cells
       const columns = await ctx.db.column.findMany({
-        where: { tableId: input.tableId },
+        where: { tableId },
         select: { id: true },
       });
 
