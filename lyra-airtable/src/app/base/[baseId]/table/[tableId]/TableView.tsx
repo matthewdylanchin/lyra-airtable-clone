@@ -130,16 +130,15 @@ export function TableView({
   /* ---------- Render ---------- */
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
-      {/* Scrollable container for both header and body */}
-      <div
-        ref={tableContainerRef}
-        className="overflow-auto"
-        style={{ height: "calc(100vh - 200px)" }} // Adjust based on your layout
-      >
-        <table className="w-full border-collapse">
+    <div className="relative h-full w-full overflow-hidden bg-white">
+      {/* Scrollable container for both header and body - with horizontal scroll */}
+      <div ref={tableContainerRef} className="h-full overflow-auto">
+        <table
+          className="w-full border-collapse"
+          style={{ minWidth: "max-content" }}
+        >
           {/* Fixed header with sticky positioning */}
-          <thead className="sticky top-0 z-10 border-b border-gray-200">
+          <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50">
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
