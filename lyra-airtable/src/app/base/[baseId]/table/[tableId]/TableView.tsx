@@ -7,6 +7,7 @@ import type { TableRow, AddColumnState } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 type RowContextMenuState = {
   rowId: string;
@@ -25,7 +26,6 @@ export function TableView({
   onCloseAddColumn: () => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
-
   const utils = api.useUtils();
 
   /* ---------- Row mutations ---------- */
@@ -97,89 +97,160 @@ export function TableView({
 
     void deleteRow.mutate(rowMenu.rowId);
   };
+
   const handleAddRow = () => {
     void appendRow.mutate({ tableId });
   };
 
-  const visibleColumnCount = table.getVisibleLeafColumns().length + 1; // +1 for the add-column header
+  const rows = table.getRowModel().rows;
+
+  /* ---------- Virtualization ---------- */
+
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 33, // estimated row height in px (Airtable-style)
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0]!.start : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? totalSize - virtualRows[virtualRows.length - 1]!.end
+      : 0;
 
   /* ---------- Render ---------- */
 
   return (
-    <>
-      <table className="w-full border-collapse text-sm">
-        <thead className="sticky top-0 bg-zinc-50">
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              {hg.headers.map((header) => (
-                <th
-                  key={header.id}
-                  className="border-b px-2 py-2 text-left font-medium whitespace-nowrap"
-                >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </th>
-              ))}
-
-              <th className="border-b px-2 py-2 text-left font-medium">
-                <AddColumnButton tableId={tableId} />
-              </th>
-            </tr>
-          ))}
-        </thead>
-
-        <tbody>
-          {table.getRowModel().rows.map((row) => {
-            const rowId = row.original.__rowId;
-
-            return (
-              <tr key={row.id} className="border-b">
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className="px-1"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setRowMenu({
-                        rowId,
-                        rowIndex: row.index,
-                        x: e.clientX,
-                        y: e.clientY,
-                      });
-                    }}
+    <div className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
+      {/* Fixed header */}
+      <div className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50">
+        <table className="w-full border-collapse">
+          <thead>
+            {table.getHeaderGroups().map((hg) => (
+              <tr key={hg.id}>
+                {hg.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="border-r border-gray-200 px-3 py-2 text-left text-xs font-medium text-gray-600 last:border-r-0"
+                    style={{ minWidth: "150px" }}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
+                  </th>
                 ))}
+                <th className="w-12 px-3 py-2 text-left text-xs font-medium text-gray-600">
+                  <AddColumnButton tableId={tableId} />
+                </th>
               </tr>
-            );
-          })}
+            ))}
+          </thead>
+        </table>
+      </div>
 
-          {/* Airtable-style "+ Add row" bar */}
-          <tr className="border-t">
-            <td
-              colSpan={visibleColumnCount}
-              className="px-3 py-2 text-left text-sm"
-            >
-              <button
-                type="button"
-                onClick={handleAddRow}
-                className="inline-flex cursor-pointer items-center gap-2 text-zinc-600 hover:text-zinc-900"
+      {/* Scrollable body */}
+      <div
+        ref={tableContainerRef}
+        className="overflow-auto"
+        style={{ height: "calc(100vh - 200px)" }} // Adjust based on your layout
+      >
+        <table className="w-full border-collapse">
+          <tbody>
+            {/* Top spacer for virtualization */}
+            {paddingTop > 0 && (
+              <tr>
+                <td style={{ height: paddingTop }} />
+              </tr>
+            )}
+
+            {/* Virtualized rows */}
+            {virtualRows.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              if (!row) return null;
+
+              const rowId = row.original.__rowId;
+
+              return (
+                <tr
+                  key={row.id}
+                  className="border-b border-gray-200 transition-colors hover:bg-gray-50"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
+                      style={{ minWidth: "150px" }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setRowMenu({
+                          rowId,
+                          rowIndex: row.index,
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </td>
+                  ))}
+                  <td className="w-12 px-3 py-2"></td>
+                </tr>
+              );
+            })}
+
+            {/* Bottom spacer for virtualization */}
+            {paddingBottom > 0 && (
+              <tr>
+                <td style={{ height: paddingBottom }} />
+              </tr>
+            )}
+
+            {/* Airtable-style "+ Add row" bar */}
+            <tr className="border-t border-gray-200 bg-gray-50">
+              <td
+                colSpan={table.getVisibleLeafColumns().length + 1}
+                className="px-3 py-2 text-left"
               >
-                <span className="text-lg leading-none">+</span>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       {/* Right-click row context menu - Airtable style */}
       {rowMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          className="fixed z-[10000] w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={{ top: rowMenu.y, left: rowMenu.x }}
         >
           {/* Ask Omni - Static */}
@@ -413,6 +484,6 @@ export function TableView({
           initialPosition={addColumnOpen.position}
         />
       )}
-    </>
+    </div>
   );
 }
