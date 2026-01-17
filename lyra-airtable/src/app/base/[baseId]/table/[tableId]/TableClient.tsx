@@ -156,6 +156,7 @@ export default function TableClient() {
           table={table}
           addColumnOpen={addColumnOpen}
           onCloseAddColumn={() => setAddColumnOpen(null)}
+          focusedRowIndex={selectedCell?.rowIndex ?? null}
         />
       </div>
     </div>

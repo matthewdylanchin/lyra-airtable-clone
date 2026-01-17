@@ -1,7 +1,7 @@
 // table/useKeyboardNavigation.ts
 import { useEffect } from "react";
-import type { SelectedCell, TableRow, Editing } from "../types";
 import type { Table } from "@tanstack/react-table";
+import type { SelectedCell, TableRow, Editing } from "../types";
 
 export function useKeyboardNavigation({
   table,
@@ -78,5 +78,5 @@ export function useKeyboardNavigation({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedCell, editing]);
+  }, [table, selectedCell, editing, setSelectedCell, startEdit, setDraft]);
 }
