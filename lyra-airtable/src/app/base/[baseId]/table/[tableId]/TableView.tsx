@@ -263,7 +263,7 @@ export function TableView({
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
                   const columnDef = header.column.columnDef;
-                  const width = columnDef.size || 150;
+                  const width = columnDef.size ?? 150;
 
                   return (
                     <th
@@ -354,7 +354,7 @@ export function TableView({
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
                     const columnDef = cell.column.columnDef;
-                    const width = columnDef.size || 150;
+                    const width = columnDef.size ?? 150;
                     const cellKey = `${rowIndex}-${cellIndex}`;
 
                     return (
