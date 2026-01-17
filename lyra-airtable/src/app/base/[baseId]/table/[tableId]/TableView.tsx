@@ -103,13 +103,16 @@ export function TableView({
   };
 
   const rows = table.getRowModel().rows;
+  const headerGroups = table.getHeaderGroups();
+  const visibleColumns = table.getVisibleLeafColumns();
 
   /* ---------- Virtualization ---------- */
 
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Add 1 to count for the "Add row" button row
   const rowVirtualizer = useVirtualizer({
-    count: rows.length,
+    count: rows.length + 1, // +1 for the add row button
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 33, // estimated row height in px (Airtable-style)
     overscan: 10,
@@ -128,40 +131,45 @@ export function TableView({
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
-      {/* Fixed header */}
-      <div className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50">
-        <table className="w-full border-collapse">
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="border-r border-gray-200 px-3 py-2 text-left text-xs font-medium text-gray-600 last:border-r-0"
-                    style={{ minWidth: "150px" }}
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
-                    )}
-                  </th>
-                ))}
-                <th className="w-12 px-3 py-2 text-left text-xs font-medium text-gray-600">
-                  <AddColumnButton tableId={tableId} />
-                </th>
-              </tr>
-            ))}
-          </thead>
-        </table>
-      </div>
-
-      {/* Scrollable body */}
+      {/* Scrollable container for both header and body */}
       <div
         ref={tableContainerRef}
         className="overflow-auto"
         style={{ height: "calc(100vh - 200px)" }} // Adjust based on your layout
       >
         <table className="w-full border-collapse">
+          {/* Fixed header with sticky positioning */}
+          <thead className="sticky top-0 z-10 border-b border-gray-200">
+            {headerGroups.map((hg) => (
+              <tr key={hg.id}>
+                {hg.headers.map((header) => {
+                  const columnDef = header.column.columnDef;
+                  const width = columnDef.size || 150; // Use column size or default
+
+                  return (
+                    <th
+                      key={header.id}
+                      className="border-r border-gray-200 px-3 py-2 text-left text-xs font-medium text-gray-600 last:border-r-0"
+                      style={{
+                        width: `${width}px`,
+                        minWidth: `${width}px`,
+                        maxWidth: `${width}px`,
+                      }}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </th>
+                  );
+                })}
+                <th className="sticky right-0 w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
+                  <AddColumnButton tableId={tableId} />
+                </th>
+              </tr>
+            ))}
+          </thead>
+
           <tbody>
             {/* Top spacer for virtualization */}
             {paddingTop > 0 && (
@@ -172,6 +180,41 @@ export function TableView({
 
             {/* Virtualized rows */}
             {virtualRows.map((virtualRow) => {
+              // Check if this is the "Add row" button row
+              if (virtualRow.index === rows.length) {
+                return (
+                  <tr
+                    key="add-row"
+                    className="border-t border-gray-200 bg-gray-50"
+                  >
+                    <td
+                      colSpan={visibleColumns.length + 1}
+                      className="px-3 py-2 text-left"
+                    >
+                      <button
+                        type="button"
+                        onClick={handleAddRow}
+                        className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
+
               const row = rows[virtualRow.index];
               if (!row) return null;
 
@@ -182,28 +225,37 @@ export function TableView({
                   key={row.id}
                   className="border-b border-gray-200 transition-colors hover:bg-gray-50"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
-                      style={{ minWidth: "150px" }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setRowMenu({
-                          rowId,
-                          rowIndex: row.index,
-                          x: e.clientX,
-                          y: e.clientY,
-                        });
-                      }}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </td>
-                  ))}
-                  <td className="w-12 px-3 py-2"></td>
+                  {row.getVisibleCells().map((cell) => {
+                    const columnDef = cell.column.columnDef;
+                    const width = columnDef.size || 150; // Use column size or default
+
+                    return (
+                      <td
+                        key={cell.id}
+                        className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
+                        style={{
+                          width: `${width}px`,
+                          minWidth: `${width}px`,
+                          maxWidth: `${width}px`,
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setRowMenu({
+                            rowId,
+                            rowIndex: row.index,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
+                        }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="w-12 max-w-12 min-w-12 px-3 py-2"></td>
                 </tr>
               );
             })}
@@ -214,34 +266,6 @@ export function TableView({
                 <td style={{ height: paddingBottom }} />
               </tr>
             )}
-
-            {/* Airtable-style "+ Add row" bar */}
-            <tr className="border-t border-gray-200 bg-gray-50">
-              <td
-                colSpan={table.getVisibleLeafColumns().length + 1}
-                className="px-3 py-2 text-left"
-              >
-                <button
-                  type="button"
-                  onClick={handleAddRow}
-                  className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                </button>
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -466,7 +490,7 @@ export function TableView({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                d="M19 7l-.867 12.142A2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               />
             </svg>
             <span>Delete record</span>

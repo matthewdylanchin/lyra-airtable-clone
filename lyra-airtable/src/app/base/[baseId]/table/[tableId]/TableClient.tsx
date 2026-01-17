@@ -11,7 +11,11 @@ import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
-import type { SelectedCell, ColumnInsertPosition, AddColumnState } from "./types";
+import type {
+  SelectedCell,
+  ColumnInsertPosition,
+  AddColumnState,
+} from "./types";
 
 export default function TableClient() {
   /* ---------- Routing ---------- */
@@ -120,8 +124,6 @@ export default function TableClient() {
   /* ---------- Render ---------- */
   return (
     <div className="p-6">
-      <div className="text-lg font-semibold">{data.table.name}</div>
-
       {(localError ?? upsert.error) && (
         <div className="mt-2 text-sm text-red-600">
           {localError ?? upsert.error?.message}
