@@ -21,11 +21,13 @@ export function TableView({
   addColumnOpen,
   onCloseAddColumn,
   focusedRowIndex,
+  focusedColumnIndex,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
   onCloseAddColumn: () => void;
   focusedRowIndex?: number | null;
+  focusedColumnIndex?: number | null;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
@@ -113,6 +115,7 @@ export function TableView({
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLTableSectionElement | null>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const cellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
 
   // Add 1 to count for the "Add row" button row
   const rowVirtualizer = useVirtualizer({
@@ -131,7 +134,7 @@ export function TableView({
       ? totalSize - virtualRows[virtualRows.length - 1]!.end
       : 0;
 
-  /* ---------- DOM-based visibility scrolling ---------- */
+  /* ---------- Vertical scrolling (existing) ---------- */
   useEffect(() => {
     if (focusedRowIndex == null) return;
     if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
@@ -160,7 +163,6 @@ export function TableView({
       rowRect.top >= visibleTop && rowRect.bottom <= visibleBottom;
 
     if (isFullyVisible) {
-      console.log("✅ Row fully visible - no scroll");
       return;
     }
 
@@ -172,16 +174,75 @@ export function TableView({
       // Row is cut off at top - scroll up just enough to show it
       const difference = visibleTop - rowRect.top;
       newScrollTop = currentScrollTop - difference;
-      console.log("⬆️ Scrolling UP by", difference, "px to:", newScrollTop);
     } else if (rowRect.bottom > visibleBottom) {
       // Row is cut off at bottom - scroll down just enough to show it
       const difference = rowRect.bottom - visibleBottom;
       newScrollTop = currentScrollTop + difference;
-      console.log("⬇️ Scrolling DOWN by", difference, "px to:", newScrollTop);
     }
 
     container.scrollTop = newScrollTop;
   }, [focusedRowIndex, rows.length, rowVirtualizer]);
+
+  /* ---------- Horizontal scrolling (NEW!) ---------- */
+  useEffect(() => {
+    if (focusedRowIndex == null || focusedColumnIndex == null) return;
+    if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
+    if (focusedColumnIndex < 0 || focusedColumnIndex >= visibleColumns.length)
+      return;
+
+    const container = tableContainerRef.current;
+    const cellKey = `${focusedRowIndex}-${focusedColumnIndex}`;
+    const focusedCellElement = cellRefs.current.get(cellKey);
+
+    if (!container || !focusedCellElement) {
+      return;
+    }
+
+    // Get the actual positions from the DOM
+    const containerRect = container.getBoundingClientRect();
+    const cellRect = focusedCellElement.getBoundingClientRect();
+
+    // Calculate visible area (horizontal)
+    const visibleLeft = containerRect.left;
+    const visibleRight = containerRect.right;
+
+    // Check if cell is fully visible horizontally
+    const isFullyVisible =
+      cellRect.left >= visibleLeft && cellRect.right <= visibleRight;
+
+    console.log("Horizontal Scroll Check:", {
+      focusedColumnIndex,
+      cellLeft: cellRect.left,
+      cellRight: cellRect.right,
+      visibleLeft,
+      visibleRight,
+      isFullyVisible,
+      cellWidth: cellRect.width,
+    });
+
+    if (isFullyVisible) {
+      console.log("✅ Cell fully visible horizontally - no scroll");
+      return;
+    }
+
+    // Calculate how much to scroll
+    const currentScrollLeft = container.scrollLeft;
+    let newScrollLeft = currentScrollLeft;
+
+    if (cellRect.left < visibleLeft) {
+      // Cell is cut off on left - scroll left to show it
+      const difference = visibleLeft - cellRect.left;
+      newScrollLeft = currentScrollLeft - difference;
+      console.log("⬅️ Scrolling LEFT by", difference, "px to:", newScrollLeft);
+    } else if (cellRect.right > visibleRight) {
+      // Cell is cut off on right - scroll right to show it
+      const difference = cellRect.right - visibleRight;
+      newScrollLeft = currentScrollLeft + difference;
+      console.log("➡️ Scrolling RIGHT by", difference, "px to:", newScrollLeft);
+    }
+
+    container.scrollLeft = newScrollLeft;
+  }, [focusedRowIndex, focusedColumnIndex, rows.length, visibleColumns.length]);
 
   /* ---------- Render ---------- */
 
@@ -291,13 +352,21 @@ export function TableView({
                   }}
                   className="border-b border-gray-200 transition-colors hover:bg-gray-50"
                 >
-                  {row.getVisibleCells().map((cell) => {
+                  {row.getVisibleCells().map((cell, cellIndex) => {
                     const columnDef = cell.column.columnDef;
                     const width = columnDef.size || 150;
+                    const cellKey = `${rowIndex}-${cellIndex}`;
 
                     return (
                       <td
                         key={cell.id}
+                        ref={(el) => {
+                          if (el) {
+                            cellRefs.current.set(cellKey, el);
+                          } else {
+                            cellRefs.current.delete(cellKey);
+                          }
+                        }}
                         className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
                         style={{
                           width: `${width}px`,
