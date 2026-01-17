@@ -85,7 +85,7 @@ export function TableView({
   const handleInsert = (position: "above" | "below") => {
     if (!rowMenu) return;
 
-    insertRow.mutate({
+    void insertRow.mutate({
       tableId,
       anchorRowId: rowMenu.rowId,
       position,
@@ -95,10 +95,10 @@ export function TableView({
   const handleDelete = () => {
     if (!rowMenu) return;
 
-    deleteRow.mutate(rowMenu.rowId);
+    void deleteRow.mutate(rowMenu.rowId);
   };
   const handleAddRow = () => {
-    appendRow.mutate({ tableId });
+    void appendRow.mutate({ tableId });
   };
 
   const visibleColumnCount = table.getVisibleLeafColumns().length + 1; // +1 for the add-column header
@@ -161,7 +161,7 @@ export function TableView({
           <tr className="border-t">
             <td
               colSpan={visibleColumnCount}
-              className="bg-zinc-50 px-3 py-2 text-left text-sm"
+              className="px-3 py-2 text-left text-sm"
             >
               <button
                 type="button"
