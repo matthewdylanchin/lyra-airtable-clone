@@ -303,7 +303,7 @@ export function TableView({
                     </th>
                   );
                 })}
-                <th className="sticky right-0 w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
+                <th className="w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
                   <AddColumnButton tableId={tableId} />
                 </th>
               </tr>
@@ -328,7 +328,7 @@ export function TableView({
                     className="border-t border-gray-200 bg-gray-50"
                   >
                     <td
-                      colSpan={visibleColumns.length + 1}
+                      colSpan={visibleColumns.length}
                       className="px-3 py-2 text-left"
                     >
                       <button
@@ -371,7 +371,7 @@ export function TableView({
                       rowRefs.current.delete(rowIndex);
                     }
                   }}
-                  className="border-b border-gray-200 transition-colors hover:bg-gray-50"
+                  className="transition-colors hover:bg-gray-50"
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
                     const columnDef = cell.column.columnDef;
@@ -389,7 +389,7 @@ export function TableView({
                             cellRefs.current.delete(cellKey);
                           }
                         }}
-                        className="border-r border-gray-200 last:border-r-0"
+                        className="border-r border-b border-gray-200 last:border-r-0"
                         // ↑ Only keep borders, NO padding or text styles
                         style={{
                           width: `${width}px`,
