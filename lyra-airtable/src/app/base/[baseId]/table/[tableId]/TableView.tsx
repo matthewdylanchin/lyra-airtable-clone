@@ -210,18 +210,7 @@ export function TableView({
     const isFullyVisible =
       cellRect.left >= visibleLeft && cellRect.right <= visibleRight;
 
-    console.log("Horizontal Scroll Check:", {
-      focusedColumnIndex,
-      cellLeft: cellRect.left,
-      cellRight: cellRect.right,
-      visibleLeft,
-      visibleRight,
-      isFullyVisible,
-      cellWidth: cellRect.width,
-    });
-
     if (isFullyVisible) {
-      console.log("✅ Cell fully visible horizontally - no scroll");
       return;
     }
 
@@ -233,12 +222,10 @@ export function TableView({
       // Cell is cut off on left - scroll left to show it
       const difference = visibleLeft - cellRect.left;
       newScrollLeft = currentScrollLeft - difference;
-      console.log("⬅️ Scrolling LEFT by", difference, "px to:", newScrollLeft);
     } else if (cellRect.right > visibleRight) {
       // Cell is cut off on right - scroll right to show it
       const difference = cellRect.right - visibleRight;
       newScrollLeft = currentScrollLeft + difference;
-      console.log("➡️ Scrolling RIGHT by", difference, "px to:", newScrollLeft);
     }
 
     container.scrollLeft = newScrollLeft;
@@ -246,24 +233,34 @@ export function TableView({
 
   /* ---------- Render ---------- */
 
+  // Calculate total table width from all column sizes to prevent auto-sizing
+  const tableWidth = visibleColumns.reduce(
+    (sum, col) => sum + col.getSize(),
+    0,
+  );
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
       {/* Scrollable container for both header and body - with horizontal scroll */}
       <div ref={tableContainerRef} className="h-full overflow-auto">
         <table
-          className="w-full border-collapse"
-          style={{ minWidth: "max-content" }}
+          className="border-collapse"
+          style={{
+            width: `${tableWidth}px`,
+            minWidth: `${tableWidth}px`,
+          }}
         >
           {/* Fixed header with sticky positioning */}
           <thead
             ref={headerRef}
-            className="sticky top-0 z-10 border-b border-gray-200"
+            className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50"
           >
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
                   const columnDef = header.column.columnDef;
-                  const width = columnDef.size ?? 150;
+                  // Get the actual size from the column state
+                  const width = header.getSize();
 
                   return (
                     <th
@@ -273,12 +270,36 @@ export function TableView({
                         width: `${width}px`,
                         minWidth: `${width}px`,
                         maxWidth: `${width}px`,
+                        position: "relative",
                       }}
                     >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                      <div className="flex h-full items-center justify-between gap-1">
+                        {/* header content */}
+                        <div className="flex-1 truncate">
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                        </div>
+
+                        {/* Resize handle - positioned at right edge */}
+                        <div
+                          onMouseDown={header.getResizeHandler()}
+                          onTouchStart={header.getResizeHandler()}
+                          className="absolute top-0 right-[-2px] h-full w-[4px] cursor-col-resize touch-none select-none"
+                          style={{
+                            userSelect: "none",
+                          }}
+                        >
+                          <div
+                            className={`absolute top-0 right-[1px] h-full w-[2px] ${
+                              header.column.getIsResizing()
+                                ? "bg-blue-500"
+                                : "bg-transparent hover:bg-blue-400"
+                            }`}
+                          />
+                        </div>
+                      </div>
                     </th>
                   );
                 })}
@@ -354,7 +375,8 @@ export function TableView({
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
                     const columnDef = cell.column.columnDef;
-                    const width = columnDef.size ?? 150;
+                    // Get the actual size from the column state
+                    const width = cell.column.getSize();
                     const cellKey = `${rowIndex}-${cellIndex}`;
 
                     return (
