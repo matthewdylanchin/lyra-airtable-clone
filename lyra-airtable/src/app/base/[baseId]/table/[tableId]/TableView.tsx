@@ -253,7 +253,7 @@ export function TableView({
           {/* Fixed header with sticky positioning */}
           <thead
             ref={headerRef}
-            className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50"
+            className="sticky top-0 z-10 border-b border-gray-200"
           >
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
@@ -303,8 +303,10 @@ export function TableView({
                     </th>
                   );
                 })}
-                <th className="sticky right-0 w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
-                  <AddColumnButton tableId={tableId} />
+                <th className="w-25 max-w-25 min-w-25 border-r border-b border-l border-gray-200 px-0 py-0 text-xs font-medium text-gray-600">
+                  <div className="flex h-full w-full items-center justify-center">
+                    <AddColumnButton tableId={tableId} />
+                  </div>
                 </th>
               </tr>
             ))}
@@ -328,7 +330,7 @@ export function TableView({
                     className="border-t border-gray-200 bg-gray-50"
                   >
                     <td
-                      colSpan={visibleColumns.length + 1}
+                      colSpan={visibleColumns.length}
                       className="px-3 py-2 text-left"
                     >
                       <button
@@ -371,7 +373,7 @@ export function TableView({
                       rowRefs.current.delete(rowIndex);
                     }
                   }}
-                  className="border-b border-gray-200 transition-colors hover:bg-gray-50"
+                  className="transition-colors hover:bg-gray-50"
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
                     const columnDef = cell.column.columnDef;
@@ -389,11 +391,13 @@ export function TableView({
                             cellRefs.current.delete(cellKey);
                           }
                         }}
-                        className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
+                        className="border-r border-b border-gray-200 last:border-r-0"
+                        // ↑ Only keep borders, NO padding or text styles
                         style={{
                           width: `${width}px`,
                           minWidth: `${width}px`,
                           maxWidth: `${width}px`,
+                          padding: 0, // ✅ Explicitly set padding to 0
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();

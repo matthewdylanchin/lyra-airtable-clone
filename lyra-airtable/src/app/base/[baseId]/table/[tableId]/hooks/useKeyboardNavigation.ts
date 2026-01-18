@@ -24,6 +24,9 @@ export function useKeyboardNavigation({
 }) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // 🚫 Don't handle global keyboard nav while a cell is being edited
+      if (editing) return;
+
       if (!selectedCell) return;
 
       const rows = table.getRowModel().rows;
@@ -32,7 +35,8 @@ export function useKeyboardNavigation({
 
       let { rowIndex, colIndex } = selectedCell;
 
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !editing) {
+      // Start editing when typing a character
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
         const row = rows[rowIndex];
         const col = cols[colIndex];
         if (!row || !col || col.id === "__index") return;
@@ -52,12 +56,19 @@ export function useKeyboardNavigation({
           break;
         case "ArrowRight":
         case "Tab":
-          colIndex = Math.min(colIndex + 1, cols.length - 1);
+          if (e.shiftKey && e.key === "Tab") {
+            // Shift+Tab goes left
+            colIndex = Math.max(colIndex - 1, 1);
+          } else {
+            colIndex = Math.min(colIndex + 1, cols.length - 1);
+          }
           break;
         case "ArrowLeft":
           colIndex = Math.max(colIndex - 1, 1);
           break;
         case "Enter": {
+          // ✅ Only handle Enter if NOT editing
+          // The input's onKeyDown will handle Enter during edit
           const row = rows[rowIndex];
           const col = cols[colIndex];
           if (!row || !col || col.id === "__index") return;
@@ -78,5 +89,5 @@ export function useKeyboardNavigation({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [table, selectedCell, editing, setSelectedCell, startEdit, setDraft]);
+  }, [selectedCell, editing, table, startEdit, setDraft, setSelectedCell]);
 }

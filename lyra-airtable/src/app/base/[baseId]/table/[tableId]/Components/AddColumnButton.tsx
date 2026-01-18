@@ -376,7 +376,7 @@ export default function AddColumnButton({
   const dropdownContent = (
     <div
       ref={menuRef}
-      className={`fixed z-[9999] rounded-lg border border-zinc-200 bg-white shadow-xl ${
+      className={`fixed z-[9999] w-[350px] rounded-lg border border-zinc-200 bg-white shadow-xl ${
         step === "form" ? "w-auto" : "w-80"
       }`}
       style={{
@@ -412,8 +412,7 @@ export default function AddColumnButton({
                   {filteredAgents.map((agent) => (
                     <button
                       key={agent.label}
-                      disabled={agent.disabled}
-                      className={`flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-left text-sm text-zinc-700 transition ${agent.hoverBg} disabled:cursor-not-allowed disabled:opacity-50`}
+                      className={`flex items-center gap-2 rounded-md bg-white px-3 py-2 text-left text-sm text-zinc-700 transition ${agent.hoverBg} cursor-pointer`}
                     >
                       <span className={agent.iconColor}>{agent.icon}</span>
                       <span className="text-xs">{agent.label}</span>
@@ -432,8 +431,7 @@ export default function AddColumnButton({
                   {filteredFields.map((field) => (
                     <button
                       key={field.label}
-                      disabled={field.disabled}
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
                       onClick={() => {
                         if (!field.disabled && field.type) {
                           setSelectedType(field.type as "TEXT" | "NUMBER");
@@ -563,7 +561,7 @@ export default function AddColumnButton({
                 insertColumn.isPending ||
                 createColumn.isPending
               }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
               {insertColumn.isPending || createColumn.isPending
                 ? "Creating..."

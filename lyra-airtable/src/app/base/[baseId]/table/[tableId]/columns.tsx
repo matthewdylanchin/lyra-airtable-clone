@@ -9,6 +9,7 @@ import type {
 import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
 import type { ColumnInsertPosition } from "./types";
+import type { CellUpsertMutation } from "./types";
 
 /**
  * Helper function to estimate appropriate column width based on column type and name
@@ -16,13 +17,12 @@ import type { ColumnInsertPosition } from "./types";
 function getColumnWidth(columnName: string, columnType?: string): number {
   const name = columnName.toLowerCase();
 
-  // Check for specific patterns in column names
   if (
     name.includes("note") ||
     name.includes("description") ||
     name.includes("comment")
   ) {
-    return 300; // Wide for long text
+    return 300;
   }
   if (name.includes("summary")) {
     return 250;
@@ -56,7 +56,6 @@ function getColumnWidth(columnName: string, columnType?: string): number {
     return 140;
   }
 
-  // Fallback to column type
   if (columnType === "LONG_TEXT" || columnType === "TEXT") {
     return 250;
   }
@@ -73,7 +72,6 @@ function getColumnWidth(columnName: string, columnType?: string): number {
     return 180;
   }
 
-  // Default
   return 150;
 }
 
@@ -88,6 +86,7 @@ export function createColumns({
   cancelEdit,
   setDraft,
   onInsert,
+  upsert,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -106,36 +105,35 @@ export function createColumns({
     insert: ColumnInsertPosition,
     position: { top: number; left: number },
   ) => void;
+  upsert: CellUpsertMutation;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
   return [
     {
       id: "__index",
-      header: "#",
-      size: 60, // ✅ Fixed width for row numbers
+      header: "",
+      size: 60,
       minSize: 50,
-      maxSize: 80,
-      cell: (info) => info.row.index + 1,
+      cell: (info) => (
+        <div className="flex h-full items-center justify-center text-sm text-gray-600">
+          {info.row.index + 1}
+        </div>
+      ),
     },
 
     ...data.columns.map((c) => ({
       id: c.id,
       accessorFn: (row: TableRow) => row[c.id] ?? null,
-
-      // ✅ Add size based on column type and name
       size: getColumnWidth(c.name, c.type),
       minSize: 50,
-      maxSize: 500,
 
-      /** ⭐ Add full meta so the header menu works */
       meta: {
         id: c.id,
         name: c.name,
         type: c.type,
       },
 
-      /** ⭐ Use ColumnHeader component */
       header: () => (
         <ColumnHeader
           column={{ id: c.id, name: c.name, type: c.type }}
@@ -158,10 +156,15 @@ export function createColumns({
 
         const isNumberCol = c.type === "NUMBER";
 
+        const isPending =
+          upsert.isPending &&
+          upsert.variables?.rowId === rowId &&
+          upsert.variables?.columnId === c.id;
+
         return (
           <div
             className={cn(
-              "relative h-8 w-full cursor-default px-2 py-1 outline-none",
+              "relative flex h-9 w-full cursor-default items-center outline-none", // ✅ Added flex and items-center
               isSelected && "ring-2 ring-blue-600 ring-inset",
               !isEditing && "hover:bg-zinc-50",
             )}
@@ -175,9 +178,7 @@ export function createColumns({
                 onChange={(e) => {
                   const val = e.target.value;
 
-                  // ⭐ NUMBER COLUMN VALIDATION
                   if (isNumberCol) {
-                    // Allow: digits, optional decimal
                     if (/^-?\d*\.?\d*$/.test(val)) {
                       setDraft(val);
                     }
@@ -189,17 +190,35 @@ export function createColumns({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    void commitEdit();
+                    e.stopPropagation();
+                    commitEdit();
+                    return;
                   }
+
+                  if (e.key === "Tab") {
+                    e.preventDefault();
+                    commitEdit();
+                    return;
+                  }
+
                   if (e.key === "Escape") {
                     e.preventDefault();
                     cancelEdit();
+                    return;
                   }
                 }}
-                className="absolute inset-0 box-border px-2 ring-2 ring-blue-600 outline-none"
+                onBlur={() => {
+                  commitEdit();
+                }}
+                // ✅ Use absolute positioning to fill entire cell
+                className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+                style={{ boxShadow: "none" }}
               />
             ) : (
-              String(value ?? "")
+              // ✅ Text naturally centered by parent's flex
+              <span className="block truncate px-2.5 text-sm">
+                {String(value ?? "")}
+              </span>
             )}
           </div>
         );
