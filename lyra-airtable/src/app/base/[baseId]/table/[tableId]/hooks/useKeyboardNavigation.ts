@@ -24,6 +24,9 @@ export function useKeyboardNavigation({
 }) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // 🚫 Don't handle global keyboard nav while a cell is being edited
+      if (editing) return;
+
       if (!selectedCell) return;
 
       const rows = table.getRowModel().rows;
@@ -32,7 +35,8 @@ export function useKeyboardNavigation({
 
       let { rowIndex, colIndex } = selectedCell;
 
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !editing) {
+      // Start editing when typing a character
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
         const row = rows[rowIndex];
         const col = cols[colIndex];
         if (!row || !col || col.id === "__index") return;
@@ -78,5 +82,5 @@ export function useKeyboardNavigation({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [table, selectedCell, editing, setSelectedCell, startEdit, setDraft]);
+  }, [selectedCell, editing, table, startEdit, setDraft, setSelectedCell]);
 }
