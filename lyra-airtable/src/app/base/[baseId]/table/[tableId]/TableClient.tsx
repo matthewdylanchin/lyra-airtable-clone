@@ -29,10 +29,15 @@ export default function TableClient() {
     if (typeof window === "undefined") return {};
 
     const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
-    if (saved) {
-      return JSON.parse(saved);
+    if (saved != null) {
+      try {
+        return JSON.parse(saved) as ColumnSizingState;
+      } catch {
+        console.warn("Invalid column sizing in localStorage, resetting.");
+      }
     }
 
+    return {} as ColumnSizingState;
     // If no saved sizes, calculate initial sizes based on column definitions
     // This will be overridden by the columns' default sizes, but we return empty
     // so that TanStack Table uses the column.size from column definitions
