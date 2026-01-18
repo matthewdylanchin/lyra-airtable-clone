@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
-
+import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 
 import { useTableData } from "./hooks/useTableData";
@@ -21,6 +21,38 @@ export default function TableClient() {
   /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+
+  /* ---------- Column Sizing State with localStorage ---------- */
+  // ✅ Calculate initial column widths from data or localStorage
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+    // Only access localStorage on the client
+    if (typeof window === "undefined") return {};
+
+    const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
+    if (saved != null) {
+      try {
+        return JSON.parse(saved) as ColumnSizingState;
+      } catch {
+        console.warn("Invalid column sizing in localStorage, resetting.");
+      }
+    }
+
+    return {} as ColumnSizingState;
+    // If no saved sizes, calculate initial sizes based on column definitions
+    // This will be overridden by the columns' default sizes, but we return empty
+    // so that TanStack Table uses the column.size from column definitions
+    return {};
+  });
+
+  // ✅ Save to localStorage whenever column sizes change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    localStorage.setItem(
+      `table-column-sizing-${tableId}`,
+      JSON.stringify(columnSizing),
+    );
+  }, [columnSizing, tableId]);
 
   // ✅ Use position coordinates instead of ref
   const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
@@ -103,6 +135,23 @@ export default function TableClient() {
     data: tableData,
     columns,
     getCoreRowModel: getCoreRowModel(),
+
+    // ✅ Column resizing configuration
+    enableColumnResizing: true,
+    columnResizeMode: "onEnd", // Changed from "onChange" for better independent column resizing
+
+    state: {
+      columnSizing,
+    },
+
+    onColumnSizingChange: setColumnSizing,
+
+    // ✅ Default column sizes
+    defaultColumn: {
+      size: 150,
+      minSize: 50,
+      maxSize: 500,
+    },
   });
 
   /* ---------- Keyboard ---------- */
@@ -158,7 +207,7 @@ export default function TableClient() {
           onCloseAddColumn={() => setAddColumnOpen(null)}
           focusedRowIndex={selectedCell?.rowIndex ?? null}
           focusedColumnIndex={selectedCell?.colIndex ?? null}
-        />;
+        />
       </div>
     </div>
   );

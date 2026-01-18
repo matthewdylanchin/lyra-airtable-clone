@@ -10,6 +10,73 @@ import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
 import type { ColumnInsertPosition } from "./types";
 
+/**
+ * Helper function to estimate appropriate column width based on column type and name
+ */
+function getColumnWidth(columnName: string, columnType?: string): number {
+  const name = columnName.toLowerCase();
+
+  // Check for specific patterns in column names
+  if (
+    name.includes("note") ||
+    name.includes("description") ||
+    name.includes("comment")
+  ) {
+    return 300; // Wide for long text
+  }
+  if (name.includes("summary")) {
+    return 250;
+  }
+  if (name.includes("name") || name.includes("title")) {
+    return 200;
+  }
+  if (name.includes("attachment") || name.includes("file")) {
+    return 180;
+  }
+  if (
+    name.includes("assignee") ||
+    name.includes("owner") ||
+    name.includes("user")
+  ) {
+    return 150;
+  }
+  if (
+    name.includes("status") ||
+    name.includes("priority") ||
+    name.includes("type")
+  ) {
+    return 120;
+  }
+  if (
+    name.includes("date") ||
+    name.includes("time") ||
+    name.includes("created") ||
+    name.includes("updated")
+  ) {
+    return 140;
+  }
+
+  // Fallback to column type
+  if (columnType === "LONG_TEXT" || columnType === "TEXT") {
+    return 250;
+  }
+  if (columnType === "NUMBER") {
+    return 100;
+  }
+  if (columnType === "DATE" || columnType === "DATETIME") {
+    return 140;
+  }
+  if (columnType === "SELECT" || columnType === "SINGLE_SELECT") {
+    return 130;
+  }
+  if (columnType === "MULTI_SELECT") {
+    return 180;
+  }
+
+  // Default
+  return 150;
+}
+
 export function createColumns({
   data,
   editing,
@@ -46,12 +113,20 @@ export function createColumns({
     {
       id: "__index",
       header: "#",
+      size: 60, // ✅ Fixed width for row numbers
+      minSize: 50,
+      maxSize: 80,
       cell: (info) => info.row.index + 1,
     },
 
     ...data.columns.map((c) => ({
       id: c.id,
       accessorFn: (row: TableRow) => row[c.id] ?? null,
+
+      // ✅ Add size based on column type and name
+      size: getColumnWidth(c.name, c.type),
+      minSize: 50,
+      maxSize: 500,
 
       /** ⭐ Add full meta so the header menu works */
       meta: {
