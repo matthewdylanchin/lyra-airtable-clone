@@ -112,10 +112,14 @@ export function createColumns({
   return [
     {
       id: "__index",
-      header: "#",
+      header: "",
       size: 60,
       minSize: 50,
-      cell: (info) => info.row.index + 1,
+      cell: (info) => (
+        <div className="flex h-full items-center justify-center text-sm text-gray-600">
+          {info.row.index + 1}
+        </div>
+      ),
     },
 
     ...data.columns.map((c) => ({

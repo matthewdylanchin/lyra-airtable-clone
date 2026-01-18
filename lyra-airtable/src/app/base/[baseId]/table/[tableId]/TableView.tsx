@@ -303,8 +303,10 @@ export function TableView({
                     </th>
                   );
                 })}
-                <th className="w-12 max-w-12 min-w-12 bg-gray-50 px-3 py-2 text-left text-xs font-medium text-gray-600">
-                  <AddColumnButton tableId={tableId} />
+                <th className="w-25 max-w-25 min-w-25 border-r border-b border-l border-gray-200 px-0 py-0 text-xs font-medium text-gray-600">
+                  <div className="flex h-full w-full items-center justify-center">
+                    <AddColumnButton tableId={tableId} />
+                  </div>
                 </th>
               </tr>
             ))}

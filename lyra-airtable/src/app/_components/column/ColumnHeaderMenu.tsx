@@ -104,7 +104,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Copy size={16} />
         Duplicate field
@@ -120,7 +120,7 @@ export default function ColumnHeaderMenu({
           onInsert({ type: "before", columnId });
           onClose();
         }}
-        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <ArrowLeft size={16} />
         Insert left
@@ -134,7 +134,7 @@ export default function ColumnHeaderMenu({
           onInsert({ type: "after", columnId });
           onClose();
         }}
-        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <ArrowRight size={16} />
         Insert right
@@ -142,7 +142,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Focus size={16} />
         Change primary field
@@ -152,7 +152,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Link2 size={16} />
         Copy field URL
@@ -160,7 +160,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Info size={16} />
         Edit field description
@@ -168,7 +168,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Lock size={16} />
         Edit field permissions
@@ -178,7 +178,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <ArrowDownAZ size={16} />
         Sort A → Z
@@ -186,7 +186,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <ArrowUpAZ size={16} />
         Sort Z → A
@@ -196,7 +196,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Filter size={16} />
         Filter by this field
@@ -204,7 +204,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <Grid2X2 size={16} />
         Group by this field
@@ -212,7 +212,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <GitBranch size={16} />
         Show dependencies
@@ -222,7 +222,7 @@ export default function ColumnHeaderMenu({
 
       <button
         disabled
-        className="flex w-full cursor-not-allowed items-center gap-3 px-4 py-2 text-left text-sm text-zinc-400"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm hover:bg-zinc-100"
       >
         <EyeOff size={16} />
         Hide field
@@ -230,7 +230,7 @@ export default function ColumnHeaderMenu({
 
       <button
         onClick={() => void deleteColumn.mutate({ columnId })}
-        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
       >
         <Trash2 size={16} />
         Delete field
