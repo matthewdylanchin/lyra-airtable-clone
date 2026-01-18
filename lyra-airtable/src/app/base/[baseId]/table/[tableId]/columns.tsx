@@ -116,7 +116,7 @@ export function createColumns({
     {
       id: "__index",
       header: "#",
-      size: 60, // ✅ Fixed width for row numbers
+      size: 60,
       minSize: 50,
       cell: (info) => info.row.index + 1,
     },
@@ -124,19 +124,15 @@ export function createColumns({
     ...data.columns.map((c) => ({
       id: c.id,
       accessorFn: (row: TableRow) => row[c.id] ?? null,
-
-      // ✅ Add size based on column type and name
       size: getColumnWidth(c.name, c.type),
       minSize: 50,
 
-      /** ⭐ Add full meta so the header menu works */
       meta: {
         id: c.id,
         name: c.name,
         type: c.type,
       },
 
-      /** ⭐ Use ColumnHeader component */
       header: () => (
         <ColumnHeader
           column={{ id: c.id, name: c.name, type: c.type }}
@@ -159,7 +155,6 @@ export function createColumns({
 
         const isNumberCol = c.type === "NUMBER";
 
-        // ✅ Check if this cell has a pending mutation (for visual feedback)
         const isPending =
           upsert.isPending &&
           upsert.variables?.rowId === rowId &&
@@ -168,7 +163,8 @@ export function createColumns({
         return (
           <div
             className={cn(
-              "relative h-8 w-full cursor-default px-2 py-1 outline-none",
+              "relative h-8 w-full cursor-default outline-none",
+              // ✅ Ring outline on entire cell (not just when editing)
               isSelected && "ring-2 ring-blue-600 ring-inset",
               !isEditing && "hover:bg-zinc-50",
             )}
@@ -182,9 +178,7 @@ export function createColumns({
                 onChange={(e) => {
                   const val = e.target.value;
 
-                  // ⭐ NUMBER COLUMN VALIDATION
                   if (isNumberCol) {
-                    // Allow: digits, optional decimal
                     if (/^-?\d*\.?\d*$/.test(val)) {
                       setDraft(val);
                     }
@@ -196,28 +190,32 @@ export function createColumns({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
+                    e.stopPropagation(); // ✅ Prevent keyboard nav from handling this
                     commitEdit();
+                    return; // ✅ Stop here
                   }
 
                   if (e.key === "Tab") {
                     e.preventDefault();
                     commitEdit();
-                    // Navigation will be handled by useKeyboardNavigation
+                    return;
                   }
 
                   if (e.key === "Escape") {
                     e.preventDefault();
                     cancelEdit();
+                    return;
                   }
                 }}
                 onBlur={() => {
-                  // Commit when leaving the cell (clicking away / tabbing out)
                   commitEdit();
                 }}
-                className="h-full w-full border-none bg-transparent px-0 text-sm outline-none"
+                // ✅ Input fills entire cell with same padding as display
+                className="h-full w-full border-none bg-transparent px-2 py-1 text-sm outline-none"
               />
             ) : (
-              <span className="block truncate text-sm">
+              // ✅ Display text has same padding as input
+              <span className="block truncate px-2 py-1 text-sm">
                 {String(value ?? "")}
               </span>
             )}

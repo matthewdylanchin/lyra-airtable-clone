@@ -56,12 +56,19 @@ export function useKeyboardNavigation({
           break;
         case "ArrowRight":
         case "Tab":
-          colIndex = Math.min(colIndex + 1, cols.length - 1);
+          if (e.shiftKey && e.key === "Tab") {
+            // Shift+Tab goes left
+            colIndex = Math.max(colIndex - 1, 1);
+          } else {
+            colIndex = Math.min(colIndex + 1, cols.length - 1);
+          }
           break;
         case "ArrowLeft":
           colIndex = Math.max(colIndex - 1, 1);
           break;
         case "Enter": {
+          // ✅ Only handle Enter if NOT editing
+          // The input's onKeyDown will handle Enter during edit
           const row = rows[rowIndex];
           const col = cols[colIndex];
           if (!row || !col || col.id === "__index") return;
