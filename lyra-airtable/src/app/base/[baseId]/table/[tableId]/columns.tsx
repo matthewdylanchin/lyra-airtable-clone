@@ -17,13 +17,12 @@ import type { CellUpsertMutation } from "./types";
 function getColumnWidth(columnName: string, columnType?: string): number {
   const name = columnName.toLowerCase();
 
-  // Check for specific patterns in column names
   if (
     name.includes("note") ||
     name.includes("description") ||
     name.includes("comment")
   ) {
-    return 300; // Wide for long text
+    return 300;
   }
   if (name.includes("summary")) {
     return 250;
@@ -57,7 +56,6 @@ function getColumnWidth(columnName: string, columnType?: string): number {
     return 140;
   }
 
-  // Fallback to column type
   if (columnType === "LONG_TEXT" || columnType === "TEXT") {
     return 250;
   }
@@ -74,7 +72,6 @@ function getColumnWidth(columnName: string, columnType?: string): number {
     return 180;
   }
 
-  // Default
   return 150;
 }
 
@@ -163,8 +160,7 @@ export function createColumns({
         return (
           <div
             className={cn(
-              "relative h-8 w-full cursor-default outline-none",
-              // ✅ Ring outline on entire cell (not just when editing)
+              "relative flex h-9 w-full cursor-default items-center outline-none", // ✅ Added flex and items-center
               isSelected && "ring-2 ring-blue-600 ring-inset",
               !isEditing && "hover:bg-zinc-50",
             )}
@@ -190,9 +186,9 @@ export function createColumns({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    e.stopPropagation(); // ✅ Prevent keyboard nav from handling this
+                    e.stopPropagation();
                     commitEdit();
-                    return; // ✅ Stop here
+                    return;
                   }
 
                   if (e.key === "Tab") {
@@ -210,12 +206,13 @@ export function createColumns({
                 onBlur={() => {
                   commitEdit();
                 }}
-                // ✅ Input fills entire cell with same padding as display
-                className="h-full w-full border-none bg-transparent px-2 py-1 text-sm outline-none"
+                // ✅ Use absolute positioning to fill entire cell
+                className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+                style={{ boxShadow: "none" }}
               />
             ) : (
-              // ✅ Display text has same padding as input
-              <span className="block truncate px-2 py-1 text-sm">
+              // ✅ Text naturally centered by parent's flex
+              <span className="block truncate px-2.5 text-sm">
                 {String(value ?? "")}
               </span>
             )}

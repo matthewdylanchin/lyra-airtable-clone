@@ -389,11 +389,13 @@ export function TableView({
                             cellRefs.current.delete(cellKey);
                           }
                         }}
-                        className="border-r border-gray-200 px-3 py-2 text-sm text-gray-900 last:border-r-0"
+                        className="border-r border-gray-200 last:border-r-0"
+                        // ↑ Only keep borders, NO padding or text styles
                         style={{
                           width: `${width}px`,
                           minWidth: `${width}px`,
                           maxWidth: `${width}px`,
+                          padding: 0, // ✅ Explicitly set padding to 0
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
