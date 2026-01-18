@@ -16,6 +16,7 @@ export type TableRow = {
 export type Editing = {
   rowId: string;
   columnId: string;
+  originalValue: string; // ← Add this
 } | null;
 
 export type SelectedCell = {

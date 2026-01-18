@@ -1,15 +1,16 @@
 import { useState } from "react";
 import type { TableData, Cell, Editing, CellUpsertMutation } from "../types";
 
-
 export function useTableEditing({
   data,
   cellByKey,
   upsert,
+  onCommit, // ✅ New callback for instant updates
 }: {
   data: TableData | undefined;
   cellByKey: Map<string, Cell>;
   upsert: CellUpsertMutation;
+  onCommit?: (rowId: string, columnId: string, value: string) => void; // ✅ Add this
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
@@ -31,7 +32,7 @@ export function useTableEditing({
         : (cell?.textValue ?? "");
 
     setDraft(mode === "append" ? String(value) : "");
-    setEditing({ rowId, columnId });
+    setEditing({ rowId, columnId, originalValue: String(value) });
   };
 
   const cancelEdit = () => {
@@ -40,19 +41,60 @@ export function useTableEditing({
     setLocalError(null);
   };
 
-  const commitEdit = async () => {
-    if (!editing) return;
+  const commitEdit = () => {
+    console.log("🟢 [commitEdit] START", performance.now());
 
-    try {
-      await upsert.mutateAsync({
-        rowId: editing.rowId,
-        columnId: editing.columnId,
-        value: draft,
-      });
-      setEditing(null);
-    } catch (e) {
-      setLocalError(e instanceof Error ? e.message : "Failed to save");
+    if (!editing) {
+      console.log("⚠️ [commitEdit] No editing state");
+      return;
     }
+
+    const { rowId, columnId, originalValue } = editing;
+
+    if (draft === originalValue) {
+      console.log("⚠️ [commitEdit] No changes");
+      setEditing(null);
+      setDraft("");
+      return;
+    }
+
+    console.log(
+      "⚡ [commitEdit] INSTANT UPDATE via onCommit",
+      performance.now(),
+    );
+
+    // ✅ INSTANT: Update local state immediately (< 1ms)
+    if (onCommit) {
+      onCommit(rowId, columnId, draft);
+    }
+
+    console.log("🔵 [commitEdit] Clearing editing state", performance.now());
+
+    // ✅ Clear editing state immediately
+    setEditing(null);
+    setDraft("");
+    setLocalError(null);
+
+    console.log("🟡 [commitEdit] Calling upsert.mutate", performance.now());
+
+    // ✅ Save to backend (async, happens in background)
+    upsert.mutate(
+      {
+        rowId,
+        columnId,
+        value: draft,
+      },
+      {
+        onError: (error) => {
+          console.log("🔴 [commitEdit] Error:", error);
+          setLocalError(
+            error instanceof Error ? error.message : "Failed to save",
+          );
+        },
+      },
+    );
+
+    console.log("🟢 [commitEdit] END", performance.now());
   };
 
   return {

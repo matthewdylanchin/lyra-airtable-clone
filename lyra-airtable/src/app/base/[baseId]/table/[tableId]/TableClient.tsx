@@ -23,11 +23,8 @@ export default function TableClient() {
   const tableId = params.tableId;
 
   /* ---------- Column Sizing State with localStorage ---------- */
-  // ✅ Calculate initial column widths from data or localStorage
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
-    // Only access localStorage on the client
     if (typeof window === "undefined") return {};
-
     const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
     if (saved != null) {
       try {
@@ -36,26 +33,24 @@ export default function TableClient() {
         console.warn("Invalid column sizing in localStorage, resetting.");
       }
     }
-
     return {} as ColumnSizingState;
-    // If no saved sizes, calculate initial sizes based on column definitions
-    // This will be overridden by the columns' default sizes, but we return empty
-    // so that TanStack Table uses the column.size from column definitions
-    return {};
   });
 
-  // ✅ Save to localStorage whenever column sizes change
   useEffect(() => {
     if (typeof window === "undefined") return;
-
     localStorage.setItem(
       `table-column-sizing-${tableId}`,
       JSON.stringify(columnSizing),
     );
   }, [columnSizing, tableId]);
 
-  // ✅ Use position coordinates instead of ref
   const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
+
+  /* ---------- INSTANT OPTIMISTIC UPDATES ---------- */
+  // ✅ Store pending updates - NEVER remove them, let them be overwritten by fresh data
+  const [pendingUpdates, setPendingUpdates] = useState<Record<string, string>>(
+    {},
+  );
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -70,8 +65,34 @@ export default function TableClient() {
   );
 
   const upsert = api.cell.upsertValue.useMutation({
-    onSuccess: async () => {
-      await utils.table.getData.invalidate({ tableId, limit: 50 });
+    onSuccess: async (data, variables) => {
+      console.log("✅ [onSuccess] Refetching fresh data from server");
+
+      // Refetch to get the latest data and WAIT for it
+      await utils.table.getData.refetch({ tableId, limit: 50 });
+
+      console.log("✅ [onSuccess] Refetch complete, removing pending update");
+
+      // NOW remove the pending update - the fresh data is guaranteed to be here
+      setPendingUpdates((prev) => {
+        const next = { ...prev };
+        delete next[`${variables.rowId}:${variables.columnId}`];
+        console.log("🧹 Cleaned up pending update", {
+          rowId: variables.rowId,
+          columnId: variables.columnId,
+        });
+        return next;
+      });
+    },
+
+    onError: (err, variables) => {
+      console.log("🔴 [onError]", err);
+      // Remove pending update on error
+      setPendingUpdates((prev) => {
+        const next = { ...prev };
+        delete next[`${variables.rowId}:${variables.columnId}`];
+        return next;
+      });
     },
   });
 
@@ -82,6 +103,36 @@ export default function TableClient() {
 
   /* ---------- Data shaping ---------- */
   const { cellByKey, tableData } = useTableData(data);
+
+  /* ---------- Apply pending updates to tableData ---------- */
+  // ✅ Merge pending updates into the data (INSTANT display)
+  const tableDataWithPending = useMemo(() => {
+    console.log("🔄 [tableDataWithPending] Recomputing", {
+      pendingCount: Object.keys(pendingUpdates).length,
+      pendingUpdates,
+    });
+
+    if (Object.keys(pendingUpdates).length === 0) return tableData;
+
+    return tableData.map((row) => {
+      const rowId = row.__rowId;
+      const updatedRow = { ...row };
+
+      // Apply any pending updates for this row
+      Object.entries(pendingUpdates).forEach(([key, value]) => {
+        const parts = key.split(":");
+        const updateRowId = parts[0];
+        const columnId = parts[1];
+
+        if (updateRowId === rowId && columnId) {
+          console.log("✅ Applying pending update", { rowId, columnId, value });
+          updatedRow[columnId] = value;
+        }
+      });
+
+      return updatedRow;
+    });
+  }, [tableData, pendingUpdates]);
 
   /* ---------- Editing ---------- */
   const {
@@ -96,6 +147,18 @@ export default function TableClient() {
     data,
     cellByKey,
     upsert,
+    // ✅ Pass function to add pending updates
+    onCommit: (rowId, columnId, value) => {
+      console.log("⚡ [INSTANT] Adding pending update", {
+        rowId,
+        columnId,
+        value,
+      });
+      setPendingUpdates((prev) => ({
+        ...prev,
+        [`${rowId}:${columnId}`]: value,
+      }));
+    },
   });
 
   /* ---------- Columns ---------- */
@@ -117,6 +180,7 @@ export default function TableClient() {
         ) => {
           setAddColumnOpen({ insert, position });
         },
+        upsert,
       }),
     [
       data,
@@ -127,30 +191,24 @@ export default function TableClient() {
       commitEdit,
       cancelEdit,
       setDraft,
+      upsert,
     ],
   );
 
   /* ---------- Table ---------- */
   const table = useReactTable({
-    data: tableData,
+    data: tableDataWithPending, // ✅ Use data with pending updates
     columns,
     getCoreRowModel: getCoreRowModel(),
-
-    // ✅ Column resizing configuration
     enableColumnResizing: true,
-    columnResizeMode: "onEnd", // Changed from "onChange" for better independent column resizing
-
+    columnResizeMode: "onChange",
     state: {
       columnSizing,
     },
-
     onColumnSizingChange: setColumnSizing,
-
-    // ✅ Default column sizes
     defaultColumn: {
       size: 150,
       minSize: 50,
-      maxSize: 500,
     },
   });
 
@@ -192,14 +250,12 @@ export default function TableClient() {
   /* ---------- Render ---------- */
   return (
     <div className="flex h-full flex-col">
-      {/* Error banner - only shows if there's an error */}
       {(localError ?? upsert.error) && (
         <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
           {localError ?? upsert.error?.message}
         </div>
       )}
 
-      {/* Table - fills remaining space */}
       <div className="min-h-0 flex-1">
         <TableView
           table={table}

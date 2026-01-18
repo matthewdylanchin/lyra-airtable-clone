@@ -9,6 +9,7 @@ import type {
 import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
 import type { ColumnInsertPosition } from "./types";
+import type { CellUpsertMutation } from "./types";
 
 /**
  * Helper function to estimate appropriate column width based on column type and name
@@ -88,6 +89,7 @@ export function createColumns({
   cancelEdit,
   setDraft,
   onInsert,
+  upsert,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -106,6 +108,7 @@ export function createColumns({
     insert: ColumnInsertPosition,
     position: { top: number; left: number },
   ) => void;
+  upsert: CellUpsertMutation;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -115,7 +118,6 @@ export function createColumns({
       header: "#",
       size: 60, // ✅ Fixed width for row numbers
       minSize: 50,
-      maxSize: 80,
       cell: (info) => info.row.index + 1,
     },
 
@@ -126,7 +128,6 @@ export function createColumns({
       // ✅ Add size based on column type and name
       size: getColumnWidth(c.name, c.type),
       minSize: 50,
-      maxSize: 500,
 
       /** ⭐ Add full meta so the header menu works */
       meta: {
@@ -157,6 +158,12 @@ export function createColumns({
           editing?.rowId === rowId && editing?.columnId === c.id;
 
         const isNumberCol = c.type === "NUMBER";
+
+        // ✅ Check if this cell has a pending mutation (for visual feedback)
+        const isPending =
+          upsert.isPending &&
+          upsert.variables?.rowId === rowId &&
+          upsert.variables?.columnId === c.id;
 
         return (
           <div
@@ -189,17 +196,30 @@ export function createColumns({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    void commitEdit();
+                    commitEdit();
                   }
+
+                  if (e.key === "Tab") {
+                    e.preventDefault();
+                    commitEdit();
+                    // Navigation will be handled by useKeyboardNavigation
+                  }
+
                   if (e.key === "Escape") {
                     e.preventDefault();
                     cancelEdit();
                   }
                 }}
-                className="absolute inset-0 box-border px-2 ring-2 ring-blue-600 outline-none"
+                onBlur={() => {
+                  // Commit when leaving the cell (clicking away / tabbing out)
+                  commitEdit();
+                }}
+                className="h-full w-full border-none bg-transparent px-0 text-sm outline-none"
               />
             ) : (
-              String(value ?? "")
+              <span className="block truncate text-sm">
+                {String(value ?? "")}
+              </span>
             )}
           </div>
         );
