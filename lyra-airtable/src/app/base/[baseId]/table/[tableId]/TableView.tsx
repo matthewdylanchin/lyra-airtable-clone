@@ -257,7 +257,7 @@ export function TableView({
           {/* Fixed header with sticky positioning */}
           <thead
             ref={headerRef}
-            className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50"
+            className="sticky top-0 z-10 border-b border-gray-200"
           >
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
@@ -409,7 +409,7 @@ export function TableView({
       {rowMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[10000] w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          className="fixed z-[10000] w-65 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={{ top: rowMenu.y, left: rowMenu.x }}
         >
           <button
