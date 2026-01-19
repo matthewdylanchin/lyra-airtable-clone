@@ -208,7 +208,7 @@ export default function AddColumnButton({
         const newColumn = {
           id: tempColumnId,
           name: variables.name,
-          type: variables.type as "TEXT" | "NUMBER",
+          type: variables.type!,
           order: newOrder,
         };
 
@@ -282,7 +282,7 @@ export default function AddColumnButton({
         const newColumn = {
           id: tempColumnId,
           name: variables.name,
-          type: variables.type as "TEXT" | "NUMBER",
+          type: variables.type!,
           order: newOrder,
         };
 
