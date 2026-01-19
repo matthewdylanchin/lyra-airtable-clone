@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { flexRender } from "@tanstack/react-table";
 import type { Table } from "@tanstack/react-table";
+import type { Virtualizer } from "@tanstack/react-virtual";
 import type { TableRow, AddColumnState } from "./types";
 import AddColumnButton from "./Components/AddColumnButton";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 
 type RowContextMenuState = {
   rowId: string;
@@ -22,12 +22,18 @@ export function TableView({
   onCloseAddColumn,
   focusedRowIndex,
   focusedColumnIndex,
+  rowVirtualizer,
+  tableContainerRef,
+  isFetchingNextPage,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
   onCloseAddColumn: () => void;
   focusedRowIndex?: number | null;
   focusedColumnIndex?: number | null;
+  rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
+  tableContainerRef: React.RefObject<HTMLDivElement | null>;
+  isFetchingNextPage: boolean;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
@@ -110,21 +116,12 @@ export function TableView({
   const headerGroups = table.getHeaderGroups();
   const visibleColumns = table.getVisibleLeafColumns();
 
-  /* ---------- Virtualization ---------- */
-
-  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  /* ---------- Refs for scrolling ---------- */
   const headerRef = useRef<HTMLTableSectionElement | null>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const cellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
 
-  // Add 1 to count for the "Add row" button row
-  const rowVirtualizer = useVirtualizer({
-    count: rows.length + 1, // +1 for the add row button
-    getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 33, // estimated row height in px (Airtable-style)
-    overscan: 10,
-  });
-
+  /* ---------- Get virtual items ---------- */
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
@@ -134,7 +131,7 @@ export function TableView({
       ? totalSize - virtualRows[virtualRows.length - 1]!.end
       : 0;
 
-  /* ---------- Vertical scrolling (existing) ---------- */
+  /* ---------- Vertical scrolling ---------- */
   useEffect(() => {
     if (focusedRowIndex == null) return;
     if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
@@ -181,9 +178,9 @@ export function TableView({
     }
 
     container.scrollTop = newScrollTop;
-  }, [focusedRowIndex, rows.length, rowVirtualizer]);
+  }, [focusedRowIndex, rows.length, rowVirtualizer, tableContainerRef]);
 
-  /* ---------- Horizontal scrolling (NEW!) ---------- */
+  /* ---------- Horizontal scrolling ---------- */
   useEffect(() => {
     if (focusedRowIndex == null || focusedColumnIndex == null) return;
     if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
@@ -229,7 +226,13 @@ export function TableView({
     }
 
     container.scrollLeft = newScrollLeft;
-  }, [focusedRowIndex, focusedColumnIndex, rows.length, visibleColumns.length]);
+  }, [
+    focusedRowIndex,
+    focusedColumnIndex,
+    rows.length,
+    visibleColumns.length,
+    tableContainerRef,
+  ]);
 
   /* ---------- Render ---------- */
 
@@ -258,8 +261,6 @@ export function TableView({
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
                 {hg.headers.map((header) => {
-                  const columnDef = header.column.columnDef;
-                  // Get the actual size from the column state
                   const width = header.getSize();
 
                   return (
@@ -322,41 +323,6 @@ export function TableView({
 
             {/* Virtualized rows */}
             {virtualRows.map((virtualRow) => {
-              // Check if this is the "Add row" button row
-              if (virtualRow.index === rows.length) {
-                return (
-                  <tr
-                    key="add-row"
-                    className="border-t border-gray-200 bg-gray-50"
-                  >
-                    <td
-                      colSpan={visibleColumns.length}
-                      className="px-3 py-2 text-left"
-                    >
-                      <button
-                        type="button"
-                        onClick={handleAddRow}
-                        className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 4v16m8-8H4"
-                          />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }
-
               const row = rows[virtualRow.index];
               if (!row) return null;
 
@@ -376,8 +342,6 @@ export function TableView({
                   className="transition-colors hover:bg-gray-50"
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
-                    const columnDef = cell.column.columnDef;
-                    // Get the actual size from the column state
                     const width = cell.column.getSize();
                     const cellKey = `${rowIndex}-${cellIndex}`;
 
@@ -392,12 +356,11 @@ export function TableView({
                           }
                         }}
                         className="border-r border-b border-gray-200 last:border-r-0"
-                        // ↑ Only keep borders, NO padding or text styles
                         style={{
                           width: `${width}px`,
                           minWidth: `${width}px`,
                           maxWidth: `${width}px`,
-                          padding: 0, // ✅ Explicitly set padding to 0
+                          padding: 0,
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -427,6 +390,46 @@ export function TableView({
                 <td style={{ height: paddingBottom }} />
               </tr>
             )}
+
+            {/* Loading indicator */}
+            {isFetchingNextPage && (
+              <tr>
+                <td
+                  colSpan={visibleColumns.length + 1}
+                  className="border-t border-gray-200 py-4 text-center text-sm text-gray-500"
+                >
+                  Loading more rows...
+                </td>
+              </tr>
+            )}
+
+            {/* Add row button - always at the bottom */}
+            <tr className="border-t border-gray-200 bg-gray-50">
+              <td
+                colSpan={visibleColumns.length}
+                className="px-3 py-2 text-left"
+              >
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
