@@ -282,7 +282,7 @@ export default function AddColumnButton({
         const newColumn = {
           id: tempColumnId,
           name: variables.name,
-          type: variables.type!,
+          type: variables.type,
           order: newOrder,
         };
 
