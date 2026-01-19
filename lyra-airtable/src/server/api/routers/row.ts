@@ -167,6 +167,83 @@ export const rowRouter = createTRPCRouter({
       });
     }),
 
+  /** BULK ADD for 100k rows button */
+
+  seedMany: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+        count: z.number().int().min(1).max(100_000).default(100_000),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { tableId, count } = input;
+
+      const startIndex = await ctx.db.row.count({
+        where: { tableId },
+      });
+
+      const columns = await ctx.db.column.findMany({
+        where: { tableId },
+        select: { id: true, name: true, type: true },
+      });
+
+      // 1. Create rows in bulk
+      const rowData = Array.from({ length: count }, (_, i) => ({
+        tableId,
+        rowIndex: startIndex + i,
+      }));
+
+      await ctx.db.row.createMany({ data: rowData });
+
+      // 2. Fetch the newly created rows so we have their IDs
+      const newRows = await ctx.db.row.findMany({
+        where: { tableId, rowIndex: { gte: startIndex } },
+        select: { id: true, rowIndex: true },
+        orderBy: { rowIndex: "asc" },
+      });
+
+      // 3. Build fake cell data
+      const allCells: {
+        rowId: string;
+        columnId: string;
+        textValue?: string;
+        numberValue?: number;
+      }[] = [];
+
+      for (const row of newRows) {
+        for (const col of columns) {
+          // simple fake value helper – replace with faker if you like
+          let textValue: string | undefined;
+          let numberValue: number | undefined;
+
+          if (col.type === "NUMBER") {
+            numberValue = row.rowIndex; // or Math.floor(Math.random() * 1000)
+          } else {
+            textValue = `${col.name} ${row.rowIndex + 1}`;
+            // or faker.lorem.words(3)
+          }
+
+          allCells.push({
+            rowId: row.id,
+            columnId: col.id,
+            textValue,
+            numberValue,
+          });
+        }
+      }
+
+      // 4. Insert cells in chunks to avoid huge single query
+      const CHUNK_SIZE = 10_000;
+      for (let i = 0; i < allCells.length; i += CHUNK_SIZE) {
+        const chunk = allCells.slice(i, i + CHUNK_SIZE);
+        // eslint-disable-next-line no-await-in-loop
+        await ctx.db.cell.createMany({ data: chunk });
+      }
+
+      return { insertedRows: newRows.length };
+    }),
+
   /** -----------------------------------------
    * REORDER ROWS (future use)
    * ----------------------------------------- */

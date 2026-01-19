@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 
@@ -47,47 +48,61 @@ export default function TableClient() {
   const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
 
   /* ---------- INSTANT OPTIMISTIC UPDATES ---------- */
-  // ✅ Store pending updates - NEVER remove them, let them be overwritten by fresh data
   const [pendingUpdates, setPendingUpdates] = useState<Record<string, string>>(
     {},
   );
 
-  const commitEditSafe = () => {
-    void commitEdit();
-  };
-
-  /* ---------- tRPC ---------- */
+  /* ---------- tRPC Infinite Query with LARGE pages ---------- */
   const utils = api.useUtils();
 
-  const q = api.table.getData.useQuery(
-    { tableId, limit: 50 },
-    { enabled: !!tableId },
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error,
+  } = api.table.getData.useInfiniteQuery(
+    { tableId, limit: 5000 }, // 🚀 5000 rows per page (was 1000)
+    {
+      enabled: !!tableId,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      staleTime: 5 * 60 * 1000, // 🚀 Cache for 5 minutes
+      gcTime: 10 * 60 * 1000, // 🚀 Keep in cache for 10 minutes (was cacheTime in v4)
+    },
   );
+
+  // Combine all pages into single data structure
+  const data = useMemo(() => {
+    if (!infiniteData?.pages) return undefined;
+
+    const firstPage = infiniteData.pages[0];
+    if (!firstPage) return undefined;
+
+    const combinedRows = infiniteData.pages.flatMap((page) => page.rows);
+    const combinedCells = infiniteData.pages.flatMap((page) => page.cells);
+
+    return {
+      table: firstPage.table,
+      columns: firstPage.columns,
+      rows: combinedRows,
+      cells: combinedCells,
+      totalCount: firstPage.totalCount,
+      nextCursor: undefined,
+    };
+  }, [infiniteData]);
 
   const upsert = api.cell.upsertValue.useMutation({
     onSuccess: async (data, variables) => {
-      console.log("✅ [onSuccess] Refetching fresh data from server");
-
-      // Refetch to get the latest data and WAIT for it
-      await utils.table.getData.refetch({ tableId, limit: 50 });
-
-      console.log("✅ [onSuccess] Refetch complete, removing pending update");
-
-      // NOW remove the pending update - the fresh data is guaranteed to be here
+      await utils.table.getData.invalidate({ tableId, limit: 5000 });
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
-        console.log("🧹 Cleaned up pending update", {
-          rowId: variables.rowId,
-          columnId: variables.columnId,
-        });
         return next;
       });
     },
 
     onError: (err, variables) => {
-      console.log("🔴 [onError]", err);
-      // Remove pending update on error
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -96,8 +111,6 @@ export default function TableClient() {
     },
   });
 
-  const data = q.data;
-
   /* ---------- Selection ---------- */
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
 
@@ -105,27 +118,19 @@ export default function TableClient() {
   const { cellByKey, tableData } = useTableData(data);
 
   /* ---------- Apply pending updates to tableData ---------- */
-  // ✅ Merge pending updates into the data (INSTANT display)
   const tableDataWithPending = useMemo(() => {
-    console.log("🔄 [tableDataWithPending] Recomputing", {
-      pendingCount: Object.keys(pendingUpdates).length,
-      pendingUpdates,
-    });
-
     if (Object.keys(pendingUpdates).length === 0) return tableData;
 
     return tableData.map((row) => {
       const rowId = row.__rowId;
       const updatedRow = { ...row };
 
-      // Apply any pending updates for this row
       Object.entries(pendingUpdates).forEach(([key, value]) => {
         const parts = key.split(":");
         const updateRowId = parts[0];
         const columnId = parts[1];
 
         if (updateRowId === rowId && columnId) {
-          console.log("✅ Applying pending update", { rowId, columnId, value });
           updatedRow[columnId] = value;
         }
       });
@@ -135,6 +140,10 @@ export default function TableClient() {
   }, [tableData, pendingUpdates]);
 
   /* ---------- Editing ---------- */
+  const commitEditSafe = () => {
+    void commitEdit();
+  };
+
   const {
     editing,
     draft,
@@ -147,13 +156,7 @@ export default function TableClient() {
     data,
     cellByKey,
     upsert,
-    // ✅ Pass function to add pending updates
     onCommit: (rowId, columnId, value) => {
-      console.log("⚡ [INSTANT] Adding pending update", {
-        rowId,
-        columnId,
-        value,
-      });
       setPendingUpdates((prev) => ({
         ...prev,
         [`${rowId}:${columnId}`]: value,
@@ -188,7 +191,6 @@ export default function TableClient() {
       draft,
       selectedCell,
       startEdit,
-      commitEdit,
       cancelEdit,
       setDraft,
       upsert,
@@ -197,7 +199,7 @@ export default function TableClient() {
 
   /* ---------- Table ---------- */
   const table = useReactTable({
-    data: tableDataWithPending, // ✅ Use data with pending updates
+    data: tableDataWithPending,
     columns,
     getCoreRowModel: getCoreRowModel(),
     enableColumnResizing: true,
@@ -212,6 +214,159 @@ export default function TableClient() {
     },
   });
 
+  /* ---------- Virtualization ---------- */
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: data?.totalCount ?? 0,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 35,
+    overscan: 150, // 🚀 Increased from 100 to 150
+  });
+
+  /* ---------- CLEANUP TIMEOUTS ---------- */
+  const timeoutIds = useRef<NodeJS.Timeout[]>([]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup all timeouts on unmount
+      timeoutIds.current.forEach((id) => clearTimeout(id));
+      timeoutIds.current = [];
+    };
+  }, []);
+
+  /* ---------- JUMP DETECTION & SMART LOADING (FIXED) ---------- */
+  const lastScrollTop = useRef(0);
+  const isLoadingJump = useRef(false);
+
+  const handleJumpFetch = useCallback(
+    async (pagesToFetch: number) => {
+      isLoadingJump.current = true;
+
+      try {
+        // Fetch pages sequentially (no setTimeout needed!)
+        for (let i = 0; i < pagesToFetch; i++) {
+          if (hasNextPage && !isFetchingNextPage) {
+            await fetchNextPage();
+          }
+        }
+      } catch (error) {
+        console.error("Error in jump fetch:", error);
+      } finally {
+        isLoadingJump.current = false;
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const currentScrollTop = container.scrollTop;
+      const scrollDiff = Math.abs(currentScrollTop - lastScrollTop.current);
+
+      // Detect scrollbar jumps (>3000px for 5000-row pages)
+      if (scrollDiff > 3000 && !isLoadingJump.current) {
+        const virtualItems = rowVirtualizer.getVirtualItems();
+        if (!virtualItems.length) return;
+
+        const firstVisible = virtualItems[0]?.index ?? 0;
+        const loadedRowCount = data?.rows.length ?? 0;
+
+        console.log("🎯 JUMP DETECTED!", {
+          scrollDiff,
+          firstVisible,
+          loadedRowCount,
+        });
+
+        // If jumped beyond loaded data
+        if (firstVisible >= loadedRowCount - 500) {
+          const rowsNeeded = firstVisible - loadedRowCount;
+          const pagesNeeded = Math.ceil(rowsNeeded / 5000);
+          const pagesToFetch = Math.min(pagesNeeded + 1, 5); // Max 5 pages at once
+
+          console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
+          void handleJumpFetch(pagesToFetch);
+        }
+      }
+
+      lastScrollTop.current = currentScrollTop;
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
+
+  /* ---------- AGGRESSIVE PREFETCHING (for normal scrolling) ---------- */
+  const isFetchingMultiple = useRef(false);
+
+  const handleEmergencyFetch = useCallback(async () => {
+    isFetchingMultiple.current = true;
+
+    try {
+      // Fetch 2 pages sequentially
+      await fetchNextPage();
+      await fetchNextPage();
+    } catch (error) {
+      console.error("Error in emergency fetch:", error);
+    } finally {
+      isFetchingMultiple.current = false;
+    }
+  }, [fetchNextPage]);
+
+  useEffect(() => {
+    if (isFetchingMultiple.current || isLoadingJump.current) return;
+
+    const virtualItems = rowVirtualizer.getVirtualItems();
+    if (!virtualItems.length) return;
+
+    const lastItem = virtualItems[virtualItems.length - 1];
+    if (!lastItem) return;
+
+    const loadedRowCount = data?.rows.length ?? 0;
+    const remainingBuffer = loadedRowCount - lastItem.index;
+
+    // 🚀 Trigger when 2000 rows remain (40% of 5000-row page)
+    if (remainingBuffer < 2000 && hasNextPage && !isFetchingNextPage) {
+      console.log("🔄 Normal prefetch", {
+        lastVisible: lastItem.index,
+        loaded: loadedRowCount,
+        remaining: remainingBuffer,
+      });
+
+      // 🚀 Emergency: fetch 2 pages when <500 rows remain
+      if (remainingBuffer < 500) {
+        console.log("🔥 EMERGENCY: Fetching multiple pages!");
+        void handleEmergencyFetch();
+      } else {
+        void fetchNextPage();
+      }
+    }
+  }, [
+    rowVirtualizer.getVirtualItems(),
+    data?.rows.length,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    handleEmergencyFetch,
+  ]);
+
+  /* ---------- Preload on mount ---------- */
+  useEffect(() => {
+    // Preload 2 pages (10,000 rows) on mount
+    if (
+      data &&
+      data.rows.length < 10000 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      console.log("🎯 Preloading initial pages...");
+      void fetchNextPage();
+    }
+  }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   /* ---------- Keyboard ---------- */
   useKeyboardNavigation({
     table,
@@ -223,7 +378,7 @@ export default function TableClient() {
   });
 
   /* ---------- Loading / error ---------- */
-  if (q.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-sm text-gray-600">Loading…</div>
@@ -231,10 +386,10 @@ export default function TableClient() {
     );
   }
 
-  if (q.error) {
+  if (error) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-sm text-red-600">{q.error.message}</div>
+        <div className="text-sm text-red-600">{error.message}</div>
       </div>
     );
   }
@@ -263,6 +418,13 @@ export default function TableClient() {
           onCloseAddColumn={() => setAddColumnOpen(null)}
           focusedRowIndex={selectedCell?.rowIndex ?? null}
           focusedColumnIndex={selectedCell?.colIndex ?? null}
+          rowVirtualizer={rowVirtualizer}
+          tableContainerRef={tableContainerRef}
+          isFetchingNextPage={
+            isFetchingNextPage ||
+            isFetchingMultiple.current ||
+            isLoadingJump.current
+          }
         />
       </div>
     </div>

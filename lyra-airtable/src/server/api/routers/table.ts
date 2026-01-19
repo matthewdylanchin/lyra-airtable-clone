@@ -177,15 +177,16 @@ export const tableRouter = createTRPCRouter({
     .input(
       z.object({
         tableId: z.string(),
-        limit: z.number().int().min(1).max(200).optional(),
+        limit: z.number().int().min(1).max(10000).default(5000),
+        cursor: z.number().int().optional(), // rowIndex to start from
       }),
     )
     .query(async ({ ctx, input }) => {
-      const limit = input.limit ?? 50;
+      const { tableId, limit, cursor } = input;
 
       const table = await ctx.db.table.findFirst({
         where: {
-          id: input.tableId,
+          id: tableId,
           base: { ownerId: ctx.session.user.id },
         },
         select: { id: true, name: true, baseId: true },
@@ -193,21 +194,34 @@ export const tableRouter = createTRPCRouter({
 
       if (!table) throw new Error("UNAUTHORIZED");
 
-      const [columns, rows] = await Promise.all([
+      const [columns, rows, totalCount] = await Promise.all([
         ctx.db.column.findMany({
           where: { tableId: table.id },
           orderBy: { order: "asc" },
           select: { id: true, name: true, type: true, order: true },
         }),
         ctx.db.row.findMany({
-          where: { tableId: table.id },
+          where: {
+            tableId: table.id,
+            ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+          },
           orderBy: { rowIndex: "asc" },
-          take: limit,
+          take: limit + 1, // Fetch one extra to determine if there's more
           select: { id: true, rowIndex: true },
+        }),
+        ctx.db.row.count({
+          where: { tableId: table.id },
         }),
       ]);
 
-      const rowIds = rows.map((r) => r.id);
+      // Check if there are more rows
+      const hasMore = rows.length > limit;
+      const resultRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextCursor = hasMore
+        ? resultRows[resultRows.length - 1]?.rowIndex
+        : undefined;
+
+      const rowIds = resultRows.map((r) => r.id);
 
       const cells = rowIds.length
         ? await ctx.db.cell.findMany({
@@ -223,6 +237,13 @@ export const tableRouter = createTRPCRouter({
           })
         : [];
 
-      return { table, columns, rows, cells };
+      return {
+        table,
+        columns,
+        rows: resultRows,
+        cells,
+        totalCount,
+        nextCursor,
+      };
     }),
 });
