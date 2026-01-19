@@ -240,7 +240,6 @@ export default function AddColumnButton({
       console.log("✅ Column created successfully");
       // Refetch to get real IDs and correct order
       await utils.table.getData.invalidate({ tableId });
-      reset();
     },
 
     onError: (error, variables, context) => {
@@ -252,7 +251,6 @@ export default function AddColumnButton({
           context.previousData,
         );
       }
-      reset();
     },
   });
 
@@ -314,7 +312,6 @@ export default function AddColumnButton({
     onSuccess: async () => {
       console.log("✅ Column inserted successfully");
       await utils.table.getData.invalidate({ tableId });
-      reset();
     },
 
     onError: (error, variables, context) => {
@@ -325,7 +322,6 @@ export default function AddColumnButton({
           context.previousData,
         );
       }
-      reset();
     },
   });
 
@@ -491,9 +487,11 @@ export default function AddColumnButton({
 
       console.log("📤 Calling insertColumn.mutate with:", mutationData);
       void insertColumn.mutate(mutationData);
+      reset(); // ✨ Close immediately after triggering mutation
     } else {
       console.log("📤 Calling createColumn.mutate with:", columnData);
       void createColumn.mutate(columnData);
+      reset(); // ✨ Close immediately after triggering mutation
     }
   }
 
