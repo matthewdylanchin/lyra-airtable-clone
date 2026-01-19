@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/trpc/react";
 import { createPortal } from "react-dom";
 import {
@@ -325,14 +325,15 @@ export default function AddColumnButton({
     },
   });
 
-  function reset() {
+  // ✅ Wrap reset in useCallback to fix exhaustive-deps warning
+  const reset = useCallback(() => {
     setOpen(false);
     setColName("");
     setSelectedType(null);
     setStep("menu");
     setSearch("");
     onClose?.();
-  }
+  }, [onClose]);
 
   useEffect(() => {
     if (autoOpen && mounted) {
@@ -487,11 +488,11 @@ export default function AddColumnButton({
 
       console.log("📤 Calling insertColumn.mutate with:", mutationData);
       void insertColumn.mutate(mutationData);
-      reset(); // ✨ Close immediately after triggering mutation
+      reset();
     } else {
       console.log("📤 Calling createColumn.mutate with:", columnData);
       void createColumn.mutate(columnData);
-      reset(); // ✨ Close immediately after triggering mutation
+      reset();
     }
   }
 
@@ -555,8 +556,12 @@ export default function AddColumnButton({
                       key={field.label}
                       className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
                       onClick={() => {
-                        if (!field.disabled && field.type) {
-                          setSelectedType(field.type as "TEXT" | "NUMBER");
+                        if (
+                          !field.disabled &&
+                          field.type &&
+                          (field.type === "TEXT" || field.type === "NUMBER")
+                        ) {
+                          setSelectedType(field.type);
                           setStep("form");
                         }
                       }}
@@ -636,6 +641,7 @@ export default function AddColumnButton({
                 viewBox="0 0 12 12"
                 fill="none"
                 className="text-zinc-400"
+                aria-hidden="true"
               >
                 <path
                   d="M3 4.5L6 7.5L9 4.5"
