@@ -63,7 +63,7 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 50 },
+    { tableId, limit: 200 }, // 🚀 INCREASED from 50 to 200 rows per page
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -95,7 +95,7 @@ export default function TableClient() {
       console.log("✅ [onSuccess] Refetching fresh data from server");
 
       // Invalidate and refetch
-      await utils.table.getData.invalidate({ tableId, limit: 50 });
+      await utils.table.getData.invalidate({ tableId, limit: 200 });
 
       console.log("✅ [onSuccess] Refetch complete, removing pending update");
 
@@ -237,17 +237,17 @@ export default function TableClient() {
     count: data?.totalCount ?? 0,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35, // Row height in pixels
-    overscan: 20, // Render extra rows above/below viewport
+    overscan: 50, // 🚀 INCREASED from 20 to 50 - render more rows outside viewport
   });
 
-  // Track if we're currently fetching to prevent scroll jumps
+  // Track if we're currently fetching to prevent multiple simultaneous fetches
   const isFetchingRef = useRef(false);
 
   useEffect(() => {
     isFetchingRef.current = isFetchingNextPage;
   }, [isFetchingNextPage]);
 
-  // Infinite scroll trigger with improved logic
+  // 🚀 AGGRESSIVE PREFETCHING - fetch much earlier
   useEffect(() => {
     const virtualItems = rowVirtualizer.getVirtualItems();
     if (!virtualItems.length) return;
@@ -257,18 +257,19 @@ export default function TableClient() {
 
     const loadedRowCount = data?.rows.length ?? 0;
 
-    // Only trigger if:
-    // 1. We're near the end of loaded rows (within 10 rows)
-    // 2. There's more data to fetch
-    // 3. We're not already fetching
+    // 🚀 NEW: Trigger when within 100 rows of the end (was 10)
+    // This gives plenty of time for fetch to complete before user sees white space
+    const triggerThreshold = 100;
+
     if (
-      lastItem.index >= loadedRowCount - 10 &&
+      lastItem.index >= loadedRowCount - triggerThreshold &&
       hasNextPage &&
       !isFetchingNextPage
     ) {
-      console.log("🔄 Fetching next page...", {
+      console.log("🔄 Prefetching next page early...", {
         lastVisibleIndex: lastItem.index,
         loadedRowCount,
+        remainingBeforeFetch: loadedRowCount - lastItem.index,
         totalCount: data?.totalCount,
       });
       void fetchNextPage();
