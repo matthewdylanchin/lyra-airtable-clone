@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -52,7 +52,7 @@ export default function TableClient() {
     {},
   );
 
-  /* ---------- tRPC Infinite Query ---------- */
+  /* ---------- tRPC Infinite Query with LARGE pages ---------- */
   const utils = api.useUtils();
 
   const {
@@ -63,10 +63,12 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 200 },
+    { tableId, limit: 5000 }, // 🚀 5000 rows per page (was 1000)
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
+      staleTime: 5 * 60 * 1000, // 🚀 Cache for 5 minutes
+      cacheTime: 10 * 60 * 1000, // 🚀 Keep in cache for 10 minutes
     },
   );
 
@@ -92,7 +94,7 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onSuccess: async (data, variables) => {
-      await utils.table.getData.invalidate({ tableId, limit: 200 });
+      await utils.table.getData.invalidate({ tableId, limit: 5000 });
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -219,16 +221,103 @@ export default function TableClient() {
     count: data?.totalCount ?? 0,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
-    overscan: 100, // 🚀 MASSIVE overscan - render 100 rows outside viewport
+    overscan: 150, // 🚀 Increased from 100 to 150
   });
 
-  /* ---------- ULTRA AGGRESSIVE PREFETCHING ---------- */
-  const isFetchingMultiple = useRef(false);
-  const lastFetchTime = useRef(Date.now());
+  /* ---------- CLEANUP TIMEOUTS ---------- */
+  const timeoutIds = useRef<NodeJS.Timeout[]>([]);
 
   useEffect(() => {
-    // Don't run if already fetching multiple pages
-    if (isFetchingMultiple.current) return;
+    return () => {
+      // Cleanup all timeouts on unmount
+      timeoutIds.current.forEach((id) => clearTimeout(id));
+      timeoutIds.current = [];
+    };
+  }, []);
+
+  /* ---------- JUMP DETECTION & SMART LOADING (FIXED) ---------- */
+  const lastScrollTop = useRef(0);
+  const isLoadingJump = useRef(false);
+
+  const handleJumpFetch = useCallback(
+    async (pagesToFetch: number) => {
+      isLoadingJump.current = true;
+
+      try {
+        // Fetch pages sequentially (no setTimeout needed!)
+        for (let i = 0; i < pagesToFetch; i++) {
+          if (hasNextPage && !isFetchingNextPage) {
+            await fetchNextPage();
+          }
+        }
+      } catch (error) {
+        console.error("Error in jump fetch:", error);
+      } finally {
+        isLoadingJump.current = false;
+      }
+    },
+    [hasNextPage, isFetchingNextPage, fetchNextPage],
+  );
+
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const currentScrollTop = container.scrollTop;
+      const scrollDiff = Math.abs(currentScrollTop - lastScrollTop.current);
+
+      // Detect scrollbar jumps (>3000px for 5000-row pages)
+      if (scrollDiff > 3000 && !isLoadingJump.current) {
+        const virtualItems = rowVirtualizer.getVirtualItems();
+        if (!virtualItems.length) return;
+
+        const firstVisible = virtualItems[0]?.index ?? 0;
+        const loadedRowCount = data?.rows.length ?? 0;
+
+        console.log("🎯 JUMP DETECTED!", {
+          scrollDiff,
+          firstVisible,
+          loadedRowCount,
+        });
+
+        // If jumped beyond loaded data
+        if (firstVisible >= loadedRowCount - 500) {
+          const rowsNeeded = firstVisible - loadedRowCount;
+          const pagesNeeded = Math.ceil(rowsNeeded / 5000);
+          const pagesToFetch = Math.min(pagesNeeded + 1, 5); // Max 5 pages at once
+
+          console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
+          void handleJumpFetch(pagesToFetch);
+        }
+      }
+
+      lastScrollTop.current = currentScrollTop;
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
+
+  /* ---------- AGGRESSIVE PREFETCHING (for normal scrolling) ---------- */
+  const isFetchingMultiple = useRef(false);
+
+  const handleEmergencyFetch = useCallback(async () => {
+    isFetchingMultiple.current = true;
+
+    try {
+      // Fetch 2 pages sequentially
+      await fetchNextPage();
+      await fetchNextPage();
+    } catch (error) {
+      console.error("Error in emergency fetch:", error);
+    } finally {
+      isFetchingMultiple.current = false;
+    }
+  }, [fetchNextPage]);
+
+  useEffect(() => {
+    if (isFetchingMultiple.current || isLoadingJump.current) return;
 
     const virtualItems = rowVirtualizer.getVirtualItems();
     if (!virtualItems.length) return;
@@ -239,47 +328,19 @@ export default function TableClient() {
     const loadedRowCount = data?.rows.length ?? 0;
     const remainingBuffer = loadedRowCount - lastItem.index;
 
-    // 🚀 SUPER AGGRESSIVE: Trigger when 150 rows remain (was 100)
-    if (remainingBuffer < 150 && hasNextPage && !isFetchingNextPage) {
-      const now = Date.now();
-      const timeSinceLastFetch = now - lastFetchTime.current;
-
-      console.log("🚀 AGGRESSIVE PREFETCH:", {
-        lastVisibleIndex: lastItem.index,
-        loadedRowCount,
-        remainingBuffer,
-        timeSinceLastFetch,
+    // 🚀 Trigger when 2000 rows remain (40% of 5000-row page)
+    if (remainingBuffer < 2000 && hasNextPage && !isFetchingNextPage) {
+      console.log("🔄 Normal prefetch", {
+        lastVisible: lastItem.index,
+        loaded: loadedRowCount,
+        remaining: remainingBuffer,
       });
 
-      // If we're close to running out, fetch MULTIPLE pages at once
-      if (remainingBuffer < 50) {
-        console.log("🔥 EMERGENCY: Loading multiple pages!");
-        isFetchingMultiple.current = true;
-
-        const fetchMultiple = async () => {
-          // Fetch 3 pages in parallel (600 rows)
-          try {
-            await Promise.all([
-              fetchNextPage(),
-              new Promise((resolve) => setTimeout(resolve, 100)).then(() =>
-                fetchNextPage(),
-              ),
-              new Promise((resolve) => setTimeout(resolve, 200)).then(() =>
-                fetchNextPage(),
-              ),
-            ]);
-          } catch (error) {
-            console.error("Error fetching multiple pages:", error);
-          } finally {
-            isFetchingMultiple.current = false;
-            lastFetchTime.current = Date.now();
-          }
-        };
-
-        void fetchMultiple();
+      // 🚀 Emergency: fetch 2 pages when <500 rows remain
+      if (remainingBuffer < 500) {
+        console.log("🔥 EMERGENCY: Fetching multiple pages!");
+        void handleEmergencyFetch();
       } else {
-        // Normal single page fetch
-        lastFetchTime.current = now;
         void fetchNextPage();
       }
     }
@@ -289,12 +350,18 @@ export default function TableClient() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
+    handleEmergencyFetch,
   ]);
 
   /* ---------- Preload on mount ---------- */
   useEffect(() => {
-    // Preload 2 extra pages immediately on mount for better initial experience
-    if (data && data.rows.length < 600 && hasNextPage && !isFetchingNextPage) {
+    // Preload 2 pages (10,000 rows) on mount
+    if (
+      data &&
+      data.rows.length < 10000 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
       console.log("🎯 Preloading initial pages...");
       void fetchNextPage();
     }
@@ -353,7 +420,11 @@ export default function TableClient() {
           focusedColumnIndex={selectedCell?.colIndex ?? null}
           rowVirtualizer={rowVirtualizer}
           tableContainerRef={tableContainerRef}
-          isFetchingNextPage={isFetchingNextPage || isFetchingMultiple.current}
+          isFetchingNextPage={
+            isFetchingNextPage ||
+            isFetchingMultiple.current ||
+            isLoadingJump.current
+          }
         />
       </div>
     </div>
