@@ -185,23 +185,147 @@ export default function AddColumnButton({
     setMounted(true);
   }, []);
 
+  // ⚡ OPTIMISTIC: Create column
   const createColumn = api.column.create.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      await utils.table.getData.cancel({ tableId });
+
+      // Snapshot previous data
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // ✨ Optimistically add column to cache
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        const tempColumnId = `temp-col-${Date.now()}`;
+        const existingColumns = old.pages[0]?.columns ?? [];
+        const newOrder = existingColumns.length;
+
+        const newColumn = {
+          id: tempColumnId,
+          name: variables.name,
+          type: variables.type as "TEXT" | "NUMBER",
+          order: newOrder,
+        };
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            columns: [...page.columns, newColumn],
+            // Add empty cells for this column to all rows
+            cells: [
+              ...page.cells,
+              ...page.rows.map((row) => ({
+                id: `temp-cell-${row.id}-${tempColumnId}`,
+                rowId: row.id,
+                columnId: tempColumnId,
+                textValue: "",
+                numberValue: null,
+                updatedAt: new Date(),
+              })),
+            ],
+          })),
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: async () => {
+      console.log("✅ Column created successfully");
+      // Refetch to get real IDs and correct order
+      await utils.table.getData.invalidate({ tableId });
       reset();
     },
-    onError: (error) => {
+
+    onError: (error, variables, context) => {
       console.error("Create column error:", error);
+      // Rollback on error
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
+      reset();
     },
   });
 
+  // ⚡ OPTIMISTIC: Insert column at position
   const insertColumn = api.column.insertAtPosition.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async (variables) => {
+      await utils.table.getData.cancel({ tableId });
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // ✨ Optimistically insert column
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        const tempColumnId = `temp-col-${Date.now()}`;
+        const existingColumns = old.pages[0]?.columns ?? [];
+
+        // Find anchor column's order
+        const anchorColumn = existingColumns.find(
+          (c) => c.id === variables.anchorColumnId,
+        );
+        const anchorOrder = anchorColumn?.order ?? 0;
+
+        const newOrder =
+          variables.position === "before" ? anchorOrder : anchorOrder + 1;
+
+        const newColumn = {
+          id: tempColumnId,
+          name: variables.name,
+          type: variables.type as "TEXT" | "NUMBER",
+          order: newOrder,
+        };
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            columns: [...page.columns, newColumn],
+            cells: [
+              ...page.cells,
+              ...page.rows.map((row) => ({
+                id: `temp-cell-${row.id}-${tempColumnId}`,
+                rowId: row.id,
+                columnId: tempColumnId,
+                textValue: "",
+                numberValue: null,
+                updatedAt: new Date(),
+              })),
+            ],
+          })),
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: async () => {
+      console.log("✅ Column inserted successfully");
+      await utils.table.getData.invalidate({ tableId });
       reset();
     },
-    onError: (error) => {
+
+    onError: (error, variables, context) => {
       console.error("Insert column error:", error);
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
+      reset();
     },
   });
 
@@ -561,7 +685,7 @@ export default function AddColumnButton({
                 insertColumn.isPending ||
                 createColumn.isPending
               }
-              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {insertColumn.isPending || createColumn.isPending
                 ? "Creating..."

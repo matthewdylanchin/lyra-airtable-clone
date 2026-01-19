@@ -11,41 +11,49 @@ export const columnRouter = createTRPCRouter({
       z.object({
         tableId: z.string(),
         name: z.string().min(1),
-        type: z.nativeEnum(ColumnType).default("TEXT"), // ← FIXED
+        type: z.nativeEnum(ColumnType).default("TEXT"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const currentCount = await ctx.db.column.count({
-        where: { tableId: input.tableId },
-      });
+      // ✅ Use transaction to prevent race conditions
+      return ctx.db.$transaction(async (tx) => {
+        // Get the actual max order, not count
+        const lastColumn = await tx.column.findFirst({
+          where: { tableId: input.tableId },
+          orderBy: { order: "desc" },
+          select: { order: true },
+        });
 
-      // Create the new column at the end
-      const column = await ctx.db.column.create({
-        data: {
-          tableId: input.tableId,
-          name: input.name,
-          type: input.type,
-          order: currentCount,
-        },
-      });
+        const newOrder = (lastColumn?.order ?? -1) + 1;
 
-      // Fill the new column with empty cells for all existing rows
-      const rows = await ctx.db.row.findMany({
-        where: { tableId: input.tableId },
-        select: { id: true },
-      });
+        const column = await tx.column.create({
+          data: {
+            tableId: input.tableId,
+            name: input.name,
+            type: input.type,
+            order: newOrder, // ✅ Safe from race conditions
+          },
+        });
 
-      await ctx.db.cell.createMany({
-        data: rows.map((r) => ({
-          rowId: r.id,
-          columnId: column.id,
-          textValue: "",
-        })),
-      });
+        // Create cells...
+        const rows = await tx.row.findMany({
+          where: { tableId: input.tableId },
+          select: { id: true },
+        });
 
-      return column;
+        if (rows.length > 0) {
+          await tx.cell.createMany({
+            data: rows.map((r) => ({
+              rowId: r.id,
+              columnId: column.id,
+              textValue: "",
+            })),
+          });
+        }
+
+        return column;
+      });
     }),
-
   /** -----------------------------------------
    * RENAME COLUMN
    * ----------------------------------------- */

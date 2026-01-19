@@ -38,24 +38,206 @@ export function TableView({
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
-  /* ---------- Row mutations ---------- */
+  /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
 
+  // ⚡ OPTIMISTIC: Append at bottom (used by "+ Add row")
   const appendRow = api.row.create.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async () => {
+      // Cancel outgoing refetches
+      await utils.table.getData.cancel({ tableId });
+
+      // Snapshot previous data
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // Get current row count
+      const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
+      const newRowIndex = currentRowCount;
+
+      // ✨ Optimistically add row to cache
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        // Create temporary row with temp ID
+        const tempRowId = `temp-row-${Date.now()}`;
+        const tempRow = {
+          id: tempRowId,
+          rowIndex: newRowIndex,
+        };
+
+        // Create empty cells for new row
+        const columns = old.pages[0]?.columns ?? [];
+        const tempCells = columns.map((col) => ({
+          id: `temp-cell-${col.id}-${Date.now()}`,
+          rowId: tempRowId,
+          columnId: col.id,
+          textValue: "",
+          numberValue: null,
+          updatedAt: new Date(),
+        }));
+
+        // Add to last page
+        const updatedPages = [...old.pages];
+        const lastPageIndex = updatedPages.length - 1;
+        const lastPage = updatedPages[lastPageIndex];
+
+        if (lastPage) {
+          updatedPages[lastPageIndex] = {
+            ...lastPage,
+            rows: [...lastPage.rows, tempRow],
+            cells: [...lastPage.cells, ...tempCells],
+            totalCount: currentRowCount + 1,
+          };
+        }
+
+        return {
+          ...old,
+          pages: updatedPages,
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: async () => {
+      // Refetch to get real IDs
+      await utils.table.getData.invalidate({ tableId });
+    },
+
+    onError: (err, variables, context) => {
+      console.error("Failed to add row:", err);
+      // Rollback
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
     },
   });
 
+  // ⚡ OPTIMISTIC: Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async (variables) => {
+      await utils.table.getData.cancel({ tableId });
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // Optimistically insert row
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        const tempRowId = `temp-row-${Date.now()}`;
+        const columns = old.pages[0]?.columns ?? [];
+
+        // Find the anchor row's index
+        let anchorRowIndex = -1;
+        for (const page of old.pages) {
+          const row = page.rows.find((r) => r.id === variables.anchorRowId);
+          if (row) {
+            anchorRowIndex = row.rowIndex;
+            break;
+          }
+        }
+
+        const newRowIndex =
+          variables.position === "above" ? anchorRowIndex : anchorRowIndex + 1;
+
+        const tempRow = {
+          id: tempRowId,
+          rowIndex: newRowIndex,
+        };
+
+        const tempCells = columns.map((col) => ({
+          id: `temp-cell-${col.id}-${Date.now()}`,
+          rowId: tempRowId,
+          columnId: col.id,
+          textValue: "",
+          numberValue: null,
+          updatedAt: new Date(),
+        }));
+
+        // Insert into appropriate page
+        const updatedPages = old.pages.map((page) => {
+          const totalCount = (page.totalCount ?? 0) + 1;
+          return {
+            ...page,
+            rows: [...page.rows, tempRow],
+            cells: [...page.cells, ...tempCells],
+            totalCount,
+          };
+        });
+
+        return {
+          ...old,
+          pages: updatedPages,
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: async () => {
+      await utils.table.getData.invalidate({ tableId });
+      setRowMenu(null);
+    },
+
+    onError: (err, variables, context) => {
+      console.error("Failed to insert row:", err);
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
       setRowMenu(null);
     },
   });
 
+  // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async (rowId) => {
+      await utils.table.getData.cancel({ tableId });
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // Optimistically remove row
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            rows: page.rows.filter((r) => r.id !== rowId),
+            cells: page.cells.filter((c) => c.rowId !== rowId),
+            totalCount: (page.totalCount ?? 0) - 1,
+          })),
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: async () => {
+      await utils.table.getData.invalidate({ tableId });
+      setRowMenu(null);
+    },
+
+    onError: (err, variables, context) => {
+      console.error("Failed to delete row:", err);
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
       setRowMenu(null);
     },
   });
@@ -228,7 +410,7 @@ export function TableView({
         >
           <thead
             ref={headerRef}
-            className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm"
+            className="sticky top-0 z-10 border-b border-gray-200 bg-white"
           >
             {headerGroups.map((hg) => (
               <tr key={hg.id}>
@@ -293,7 +475,7 @@ export function TableView({
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
 
-              // 🎨 SKELETON: Show loading state for unloaded rows
+              // Skeleton for unloaded rows
               if (!row) {
                 return (
                   <tr
@@ -384,7 +566,7 @@ export function TableView({
               </tr>
             )}
 
-            {/* Subtle loading indicator */}
+            {/* Loading indicator */}
             {isFetchingNextPage && (
               <tr>
                 <td
@@ -423,6 +605,7 @@ export function TableView({
                 <button
                   type="button"
                   onClick={handleAddRow}
+                  disabled={appendRow.isPending}
                   className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
                 >
                   <svg
@@ -438,6 +621,7 @@ export function TableView({
                       d="M12 4v16m8-8H4"
                     />
                   </svg>
+                  Add Row
                 </button>
               </td>
             </tr>
@@ -445,13 +629,14 @@ export function TableView({
         </table>
       </div>
 
-      {/* Context menu */}
+      {/* Context menu ... (keep your existing menu code) */}
       {rowMenu && (
         <div
           ref={menuRef}
-          className="fixed z-[10000] w-65 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={{ top: rowMenu.y, left: rowMenu.x }}
         >
+          {/* Ask Omni - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -471,6 +656,8 @@ export function TableView({
             </svg>
             <span>Ask Omni...</span>
           </button>
+
+          {/* Insert record above - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("above")}
@@ -491,6 +678,8 @@ export function TableView({
             </svg>
             <span>Insert record above</span>
           </button>
+
+          {/* Insert record below - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("below")}
@@ -511,6 +700,8 @@ export function TableView({
             </svg>
             <span>Insert record below</span>
           </button>
+
+          {/* Duplicate record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -530,6 +721,8 @@ export function TableView({
             </svg>
             <span>Duplicate record</span>
           </button>
+
+          {/* Apply template - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -549,6 +742,8 @@ export function TableView({
             </svg>
             <span>Apply template</span>
           </button>
+
+          {/* Expand record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -568,7 +763,11 @@ export function TableView({
             </svg>
             <span>Expand record</span>
           </button>
+
+          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
+
+          {/* Add comment - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -588,6 +787,8 @@ export function TableView({
             </svg>
             <span>Add comment</span>
           </button>
+
+          {/* Copy cell URL - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -607,6 +808,8 @@ export function TableView({
             </svg>
             <span>Copy cell URL</span>
           </button>
+
+          {/* Send record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -626,7 +829,11 @@ export function TableView({
             </svg>
             <span>Send record</span>
           </button>
+
+          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
+
+          {/* Delete record - Functional */}
           <button
             type="button"
             onClick={handleDelete}
@@ -642,7 +849,7 @@ export function TableView({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M19 7l-.867 12.142A2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
               />
             </svg>
             <span>Delete record</span>
