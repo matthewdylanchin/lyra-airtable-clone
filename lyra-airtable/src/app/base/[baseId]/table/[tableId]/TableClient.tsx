@@ -63,12 +63,12 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 5000 }, // 🚀 5000 rows per page (was 1000)
+    { tableId, limit: 5000 },
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      staleTime: 5 * 60 * 1000, // 🚀 Cache for 5 minutes
-      gcTime: 10 * 60 * 1000, // 🚀 Keep in cache for 10 minutes (was cacheTime in v4)
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
     },
   );
 
@@ -92,9 +92,42 @@ export default function TableClient() {
     };
   }, [infiniteData]);
 
+  // 🔧 FIX: Use setData instead of invalidate to prevent flash
   const upsert = api.cell.upsertValue.useMutation({
-    onSuccess: async (data, variables) => {
-      await utils.table.getData.invalidate({ tableId, limit: 5000 });
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches
+      await utils.table.getData.cancel({ tableId });
+
+      // Snapshot the previous value
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // Optimistically update cache
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            cells: page.cells.map((cell) =>
+              cell.rowId === variables.rowId &&
+              cell.columnId === variables.columnId
+                ? { ...cell, textValue: variables.value }
+                : cell,
+            ),
+          })),
+        };
+      });
+
+      return { previousData };
+    },
+
+    onSuccess: (data, variables) => {
+      console.log("✅ Cell update successful");
+      // Remove from pending updates
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -102,7 +135,17 @@ export default function TableClient() {
       });
     },
 
-    onError: (err, variables) => {
+    onError: (err, variables, context) => {
+      console.log("🔴 Cell update failed, rolling back");
+      // Rollback on error
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
+
+      // Remove from pending
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -221,7 +264,7 @@ export default function TableClient() {
     count: data?.totalCount ?? 0,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
-    overscan: 150, // 🚀 Increased from 100 to 150
+    overscan: 150,
   });
 
   /* ---------- CLEANUP TIMEOUTS ---------- */
@@ -229,13 +272,12 @@ export default function TableClient() {
 
   useEffect(() => {
     return () => {
-      // Cleanup all timeouts on unmount
       timeoutIds.current.forEach((id) => clearTimeout(id));
       timeoutIds.current = [];
     };
   }, []);
 
-  /* ---------- JUMP DETECTION & SMART LOADING (FIXED) ---------- */
+  /* ---------- JUMP DETECTION & SMART LOADING ---------- */
   const lastScrollTop = useRef(0);
   const isLoadingJump = useRef(false);
 
@@ -244,7 +286,6 @@ export default function TableClient() {
       isLoadingJump.current = true;
 
       try {
-        // Fetch pages sequentially (no setTimeout needed!)
         for (let i = 0; i < pagesToFetch; i++) {
           if (hasNextPage && !isFetchingNextPage) {
             await fetchNextPage();
@@ -267,7 +308,6 @@ export default function TableClient() {
       const currentScrollTop = container.scrollTop;
       const scrollDiff = Math.abs(currentScrollTop - lastScrollTop.current);
 
-      // Detect scrollbar jumps (>3000px for 5000-row pages)
       if (scrollDiff > 3000 && !isLoadingJump.current) {
         const virtualItems = rowVirtualizer.getVirtualItems();
         if (!virtualItems.length) return;
@@ -275,17 +315,10 @@ export default function TableClient() {
         const firstVisible = virtualItems[0]?.index ?? 0;
         const loadedRowCount = data?.rows.length ?? 0;
 
-        console.log("🎯 JUMP DETECTED!", {
-          scrollDiff,
-          firstVisible,
-          loadedRowCount,
-        });
-
-        // If jumped beyond loaded data
         if (firstVisible >= loadedRowCount - 500) {
           const rowsNeeded = firstVisible - loadedRowCount;
           const pagesNeeded = Math.ceil(rowsNeeded / 5000);
-          const pagesToFetch = Math.min(pagesNeeded + 1, 5); // Max 5 pages at once
+          const pagesToFetch = Math.min(pagesNeeded + 1, 5);
 
           console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
           void handleJumpFetch(pagesToFetch);
@@ -299,14 +332,13 @@ export default function TableClient() {
     return () => container.removeEventListener("scroll", handleScroll);
   }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
 
-  /* ---------- AGGRESSIVE PREFETCHING (for normal scrolling) ---------- */
+  /* ---------- AGGRESSIVE PREFETCHING ---------- */
   const isFetchingMultiple = useRef(false);
 
   const handleEmergencyFetch = useCallback(async () => {
     isFetchingMultiple.current = true;
 
     try {
-      // Fetch 2 pages sequentially
       await fetchNextPage();
       await fetchNextPage();
     } catch (error) {
@@ -328,15 +360,7 @@ export default function TableClient() {
     const loadedRowCount = data?.rows.length ?? 0;
     const remainingBuffer = loadedRowCount - lastItem.index;
 
-    // 🚀 Trigger when 2000 rows remain (40% of 5000-row page)
     if (remainingBuffer < 2000 && hasNextPage && !isFetchingNextPage) {
-      console.log("🔄 Normal prefetch", {
-        lastVisible: lastItem.index,
-        loaded: loadedRowCount,
-        remaining: remainingBuffer,
-      });
-
-      // 🚀 Emergency: fetch 2 pages when <500 rows remain
       if (remainingBuffer < 500) {
         console.log("🔥 EMERGENCY: Fetching multiple pages!");
         void handleEmergencyFetch();
@@ -355,14 +379,12 @@ export default function TableClient() {
 
   /* ---------- Preload on mount ---------- */
   useEffect(() => {
-    // Preload 2 pages (10,000 rows) on mount
     if (
       data &&
       data.rows.length < 10000 &&
       hasNextPage &&
       !isFetchingNextPage
     ) {
-      console.log("🎯 Preloading initial pages...");
       void fetchNextPage();
     }
   }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);

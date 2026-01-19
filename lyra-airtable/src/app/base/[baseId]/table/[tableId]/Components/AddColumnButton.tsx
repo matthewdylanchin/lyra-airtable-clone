@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/trpc/react";
 import { createPortal } from "react-dom";
 import {
@@ -185,34 +185,155 @@ export default function AddColumnButton({
     setMounted(true);
   }, []);
 
+  // ⚡ OPTIMISTIC: Create column
   const createColumn = api.column.create.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
-      reset();
+    onMutate: async (variables) => {
+      // Cancel outgoing refetches
+      await utils.table.getData.cancel({ tableId });
+
+      // Snapshot previous data
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // ✨ Optimistically add column to cache
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        const tempColumnId = `temp-col-${Date.now()}`;
+        const existingColumns = old.pages[0]?.columns ?? [];
+        const newOrder = existingColumns.length;
+
+        const newColumn = {
+          id: tempColumnId,
+          name: variables.name,
+          type: variables.type!,
+          order: newOrder,
+        };
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            columns: [...page.columns, newColumn],
+            // Add empty cells for this column to all rows
+            cells: [
+              ...page.cells,
+              ...page.rows.map((row) => ({
+                id: `temp-cell-${row.id}-${tempColumnId}`,
+                rowId: row.id,
+                columnId: tempColumnId,
+                textValue: "",
+                numberValue: null,
+                updatedAt: new Date(),
+              })),
+            ],
+          })),
+        };
+      });
+
+      return { previousData };
     },
-    onError: (error) => {
+
+    onSuccess: async () => {
+      console.log("✅ Column created successfully");
+      // Refetch to get real IDs and correct order
+      await utils.table.getData.invalidate({ tableId });
+    },
+
+    onError: (error, variables, context) => {
       console.error("Create column error:", error);
+      // Rollback on error
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
     },
   });
 
+  // ⚡ OPTIMISTIC: Insert column at position
   const insertColumn = api.column.insertAtPosition.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
-      reset();
+    onMutate: async (variables) => {
+      await utils.table.getData.cancel({ tableId });
+      const previousData = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // ✨ Optimistically insert column
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old?.pages.length) return old;
+
+        const tempColumnId = `temp-col-${Date.now()}`;
+        const existingColumns = old.pages[0]?.columns ?? [];
+
+        // Find anchor column's order
+        const anchorColumn = existingColumns.find(
+          (c) => c.id === variables.anchorColumnId,
+        );
+        const anchorOrder = anchorColumn?.order ?? 0;
+
+        const newOrder =
+          variables.position === "before" ? anchorOrder : anchorOrder + 1;
+
+        const newColumn = {
+          id: tempColumnId,
+          name: variables.name,
+          type: variables.type,
+          order: newOrder,
+        };
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            columns: [...page.columns, newColumn],
+            cells: [
+              ...page.cells,
+              ...page.rows.map((row) => ({
+                id: `temp-cell-${row.id}-${tempColumnId}`,
+                rowId: row.id,
+                columnId: tempColumnId,
+                textValue: "",
+                numberValue: null,
+                updatedAt: new Date(),
+              })),
+            ],
+          })),
+        };
+      });
+
+      return { previousData };
     },
-    onError: (error) => {
+
+    onSuccess: async () => {
+      console.log("✅ Column inserted successfully");
+      await utils.table.getData.invalidate({ tableId });
+    },
+
+    onError: (error, variables, context) => {
       console.error("Insert column error:", error);
+      if (context?.previousData) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          context.previousData,
+        );
+      }
     },
   });
 
-  function reset() {
+  // ✅ Wrap reset in useCallback to fix exhaustive-deps warning
+  const reset = useCallback(() => {
     setOpen(false);
     setColName("");
     setSelectedType(null);
     setStep("menu");
     setSearch("");
     onClose?.();
-  }
+  }, [onClose]);
 
   useEffect(() => {
     if (autoOpen && mounted) {
@@ -367,9 +488,11 @@ export default function AddColumnButton({
 
       console.log("📤 Calling insertColumn.mutate with:", mutationData);
       void insertColumn.mutate(mutationData);
+      reset();
     } else {
       console.log("📤 Calling createColumn.mutate with:", columnData);
       void createColumn.mutate(columnData);
+      reset();
     }
   }
 
@@ -433,8 +556,12 @@ export default function AddColumnButton({
                       key={field.label}
                       className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
                       onClick={() => {
-                        if (!field.disabled && field.type) {
-                          setSelectedType(field.type as "TEXT" | "NUMBER");
+                        if (
+                          !field.disabled &&
+                          field.type &&
+                          (field.type === "TEXT" || field.type === "NUMBER")
+                        ) {
+                          setSelectedType(field.type);
                           setStep("form");
                         }
                       }}
@@ -514,6 +641,7 @@ export default function AddColumnButton({
                 viewBox="0 0 12 12"
                 fill="none"
                 className="text-zinc-400"
+                aria-hidden="true"
               >
                 <path
                   d="M3 4.5L6 7.5L9 4.5"
@@ -561,7 +689,7 @@ export default function AddColumnButton({
                 insertColumn.isPending ||
                 createColumn.isPending
               }
-              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {insertColumn.isPending || createColumn.isPending
                 ? "Creating..."
