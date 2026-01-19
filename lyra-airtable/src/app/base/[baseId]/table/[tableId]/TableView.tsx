@@ -40,14 +40,12 @@ export function TableView({
 
   /* ---------- Row mutations ---------- */
 
-  // Append at bottom (used by "+ Add row")
   const appendRow = api.row.create.useMutation({
     onSuccess: () => {
       void utils.table.getData.invalidate({ tableId });
     },
   });
 
-  // Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
     onSuccess: () => {
       void utils.table.getData.invalidate({ tableId });
@@ -55,7 +53,6 @@ export function TableView({
     },
   });
 
-  // Delete row
   const deleteRow = api.row.delete.useMutation({
     onSuccess: () => {
       void utils.table.getData.invalidate({ tableId });
@@ -68,7 +65,6 @@ export function TableView({
   const [rowMenu, setRowMenu] = useState<RowContextMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Close context menu on outside click / ESC
   useEffect(() => {
     if (!rowMenu) return;
 
@@ -94,7 +90,6 @@ export function TableView({
 
   const handleInsert = (position: "above" | "below") => {
     if (!rowMenu) return;
-
     void insertRow.mutate({
       tableId,
       anchorRowId: rowMenu.rowId,
@@ -104,7 +99,6 @@ export function TableView({
 
   const handleDelete = () => {
     if (!rowMenu) return;
-
     void deleteRow.mutate(rowMenu.rowId);
   };
 
@@ -141,38 +135,29 @@ export function TableView({
     const focusedRowElement = rowRefs.current.get(focusedRowIndex);
 
     if (!container || !header || !focusedRowElement) {
-      // Row not rendered yet, use virtualizer fallback
       rowVirtualizer.scrollToIndex(focusedRowIndex, { align: "auto" });
       return;
     }
 
-    // Get the actual positions from the DOM
     const containerRect = container.getBoundingClientRect();
     const headerRect = header.getBoundingClientRect();
     const rowRect = focusedRowElement.getBoundingClientRect();
 
-    // Calculate visible area (excluding header)
     const visibleTop = containerRect.top + headerRect.height;
     const visibleBottom = containerRect.bottom;
 
-    // Check if row is fully visible
     const isFullyVisible =
       rowRect.top >= visibleTop && rowRect.bottom <= visibleBottom;
 
-    if (isFullyVisible) {
-      return;
-    }
+    if (isFullyVisible) return;
 
-    // Calculate how much to scroll
     const currentScrollTop = container.scrollTop;
     let newScrollTop = currentScrollTop;
 
     if (rowRect.top < visibleTop) {
-      // Row is cut off at top - scroll up just enough to show it
       const difference = visibleTop - rowRect.top;
       newScrollTop = currentScrollTop - difference;
     } else if (rowRect.bottom > visibleBottom) {
-      // Row is cut off at bottom - scroll down just enough to show it
       const difference = rowRect.bottom - visibleBottom;
       newScrollTop = currentScrollTop + difference;
     }
@@ -191,36 +176,26 @@ export function TableView({
     const cellKey = `${focusedRowIndex}-${focusedColumnIndex}`;
     const focusedCellElement = cellRefs.current.get(cellKey);
 
-    if (!container || !focusedCellElement) {
-      return;
-    }
+    if (!container || !focusedCellElement) return;
 
-    // Get the actual positions from the DOM
     const containerRect = container.getBoundingClientRect();
     const cellRect = focusedCellElement.getBoundingClientRect();
 
-    // Calculate visible area (horizontal)
     const visibleLeft = containerRect.left;
     const visibleRight = containerRect.right;
 
-    // Check if cell is fully visible horizontally
     const isFullyVisible =
       cellRect.left >= visibleLeft && cellRect.right <= visibleRight;
 
-    if (isFullyVisible) {
-      return;
-    }
+    if (isFullyVisible) return;
 
-    // Calculate how much to scroll
     const currentScrollLeft = container.scrollLeft;
     let newScrollLeft = currentScrollLeft;
 
     if (cellRect.left < visibleLeft) {
-      // Cell is cut off on left - scroll left to show it
       const difference = visibleLeft - cellRect.left;
       newScrollLeft = currentScrollLeft - difference;
     } else if (cellRect.right > visibleRight) {
-      // Cell is cut off on right - scroll right to show it
       const difference = cellRect.right - visibleRight;
       newScrollLeft = currentScrollLeft + difference;
     }
@@ -236,7 +211,6 @@ export function TableView({
 
   /* ---------- Render ---------- */
 
-  // Calculate total table width from all column sizes to prevent auto-sizing
   const tableWidth = visibleColumns.reduce(
     (sum, col) => sum + col.getSize(),
     0,
@@ -244,7 +218,6 @@ export function TableView({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
-      {/* Scrollable container for both header and body - with horizontal scroll */}
       <div ref={tableContainerRef} className="h-full overflow-auto">
         <table
           className="border-collapse"
@@ -253,7 +226,6 @@ export function TableView({
             minWidth: `${tableWidth}px`,
           }}
         >
-          {/* Fixed header with sticky positioning */}
           <thead
             ref={headerRef}
             className="sticky top-0 z-10 border-b border-gray-200 bg-white"
@@ -275,7 +247,6 @@ export function TableView({
                       }}
                     >
                       <div className="flex h-full items-center justify-between gap-1">
-                        {/* header content */}
                         <div className="flex-1 truncate">
                           {flexRender(
                             header.column.columnDef.header,
@@ -283,14 +254,11 @@ export function TableView({
                           )}
                         </div>
 
-                        {/* Resize handle - positioned at right edge */}
                         <div
                           onMouseDown={header.getResizeHandler()}
                           onTouchStart={header.getResizeHandler()}
                           className="absolute top-0 right-[-2px] h-full w-[4px] cursor-col-resize touch-none select-none"
-                          style={{
-                            userSelect: "none",
-                          }}
+                          style={{ userSelect: "none" }}
                         >
                           <div
                             className={`absolute top-0 right-[1px] h-full w-[2px] ${
@@ -314,7 +282,7 @@ export function TableView({
           </thead>
 
           <tbody>
-            {/* Top spacer for virtualization */}
+            {/* Top spacer */}
             {paddingTop > 0 && (
               <tr>
                 <td style={{ height: paddingTop }} />
@@ -324,7 +292,32 @@ export function TableView({
             {/* Virtualized rows */}
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
-              if (!row) return null;
+
+              // 🎨 SKELETON: Show loading state for unloaded rows
+              if (!row) {
+                return (
+                  <tr
+                    key={`skeleton-${virtualRow.index}`}
+                    className="animate-pulse"
+                  >
+                    {visibleColumns.map((col) => (
+                      <td
+                        key={col.id}
+                        className="border-r border-b border-gray-200 last:border-r-0"
+                        style={{
+                          width: `${col.getSize()}px`,
+                          minWidth: `${col.getSize()}px`,
+                          maxWidth: `${col.getSize()}px`,
+                          padding: "8px 12px",
+                        }}
+                      >
+                        <div className="h-4 rounded bg-gray-200"></div>
+                      </td>
+                    ))}
+                    <td className="w-12 max-w-12 min-w-12 px-3 py-2"></td>
+                  </tr>
+                );
+              }
 
               const rowId = row.original.__rowId;
               const rowIndex = virtualRow.index;
@@ -384,26 +377,44 @@ export function TableView({
               );
             })}
 
-            {/* Bottom spacer for virtualization */}
+            {/* Bottom spacer */}
             {paddingBottom > 0 && (
               <tr>
                 <td style={{ height: paddingBottom }} />
               </tr>
             )}
 
-            {/* Loading indicator */}
+            {/* Subtle loading indicator */}
             {isFetchingNextPage && (
               <tr>
                 <td
                   colSpan={visibleColumns.length + 1}
-                  className="border-t border-gray-200 py-4 text-center text-sm text-gray-500"
+                  className="py-2 text-center"
                 >
-                  Loading more rows...
+                  <div className="inline-flex items-center gap-2 text-xs text-gray-400">
+                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Loading...
+                  </div>
                 </td>
               </tr>
             )}
 
-            {/* Add row button - always at the bottom */}
+            {/* Add row button */}
             <tr className="border-t border-gray-200 bg-gray-50">
               <td
                 colSpan={visibleColumns.length}
@@ -434,7 +445,7 @@ export function TableView({
         </table>
       </div>
 
-      {/* Right-click row context menu - Airtable style */}
+      {/* Context menu */}
       {rowMenu && (
         <div
           ref={menuRef}
@@ -639,7 +650,6 @@ export function TableView({
         </div>
       )}
 
-      {/* existing column-insert overlay */}
       {addColumnOpen && (
         <AddColumnButton
           tableId={tableId}

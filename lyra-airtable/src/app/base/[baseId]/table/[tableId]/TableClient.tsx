@@ -63,7 +63,7 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 200 }, // 🚀 INCREASED from 50 to 200 rows per page
+    { tableId, limit: 200 },
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -86,19 +86,13 @@ export default function TableClient() {
       rows: combinedRows,
       cells: combinedCells,
       totalCount: firstPage.totalCount,
-      nextCursor: undefined, // Not used in client, only for pagination
+      nextCursor: undefined,
     };
   }, [infiniteData]);
 
   const upsert = api.cell.upsertValue.useMutation({
     onSuccess: async (data, variables) => {
-      console.log("✅ [onSuccess] Refetching fresh data from server");
-
-      // Invalidate and refetch
       await utils.table.getData.invalidate({ tableId, limit: 200 });
-
-      console.log("✅ [onSuccess] Refetch complete, removing pending update");
-
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -107,7 +101,6 @@ export default function TableClient() {
     },
 
     onError: (err, variables) => {
-      console.log("🔴 [onError]", err);
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -124,11 +117,6 @@ export default function TableClient() {
 
   /* ---------- Apply pending updates to tableData ---------- */
   const tableDataWithPending = useMemo(() => {
-    console.log("🔄 [tableDataWithPending] Recomputing", {
-      pendingCount: Object.keys(pendingUpdates).length,
-      pendingUpdates,
-    });
-
     if (Object.keys(pendingUpdates).length === 0) return tableData;
 
     return tableData.map((row) => {
@@ -141,7 +129,6 @@ export default function TableClient() {
         const columnId = parts[1];
 
         if (updateRowId === rowId && columnId) {
-          console.log("✅ Applying pending update", { rowId, columnId, value });
           updatedRow[columnId] = value;
         }
       });
@@ -168,11 +155,6 @@ export default function TableClient() {
     cellByKey,
     upsert,
     onCommit: (rowId, columnId, value) => {
-      console.log("⚡ [INSTANT] Adding pending update", {
-        rowId,
-        columnId,
-        value,
-      });
       setPendingUpdates((prev) => ({
         ...prev,
         [`${rowId}:${columnId}`]: value,
@@ -236,19 +218,18 @@ export default function TableClient() {
   const rowVirtualizer = useVirtualizer({
     count: data?.totalCount ?? 0,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 35, // Row height in pixels
-    overscan: 50, // 🚀 INCREASED from 20 to 50 - render more rows outside viewport
+    estimateSize: () => 35,
+    overscan: 100, // 🚀 MASSIVE overscan - render 100 rows outside viewport
   });
 
-  // Track if we're currently fetching to prevent multiple simultaneous fetches
-  const isFetchingRef = useRef(false);
+  /* ---------- ULTRA AGGRESSIVE PREFETCHING ---------- */
+  const isFetchingMultiple = useRef(false);
+  const lastFetchTime = useRef(Date.now());
 
   useEffect(() => {
-    isFetchingRef.current = isFetchingNextPage;
-  }, [isFetchingNextPage]);
+    // Don't run if already fetching multiple pages
+    if (isFetchingMultiple.current) return;
 
-  // 🚀 AGGRESSIVE PREFETCHING - fetch much earlier
-  useEffect(() => {
     const virtualItems = rowVirtualizer.getVirtualItems();
     if (!virtualItems.length) return;
 
@@ -256,32 +237,68 @@ export default function TableClient() {
     if (!lastItem) return;
 
     const loadedRowCount = data?.rows.length ?? 0;
+    const remainingBuffer = loadedRowCount - lastItem.index;
 
-    // 🚀 NEW: Trigger when within 100 rows of the end (was 10)
-    // This gives plenty of time for fetch to complete before user sees white space
-    const triggerThreshold = 100;
+    // 🚀 SUPER AGGRESSIVE: Trigger when 150 rows remain (was 100)
+    if (remainingBuffer < 150 && hasNextPage && !isFetchingNextPage) {
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTime.current;
 
-    if (
-      lastItem.index >= loadedRowCount - triggerThreshold &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      console.log("🔄 Prefetching next page early...", {
+      console.log("🚀 AGGRESSIVE PREFETCH:", {
         lastVisibleIndex: lastItem.index,
         loadedRowCount,
-        remainingBeforeFetch: loadedRowCount - lastItem.index,
-        totalCount: data?.totalCount,
+        remainingBuffer,
+        timeSinceLastFetch,
       });
-      void fetchNextPage();
+
+      // If we're close to running out, fetch MULTIPLE pages at once
+      if (remainingBuffer < 50) {
+        console.log("🔥 EMERGENCY: Loading multiple pages!");
+        isFetchingMultiple.current = true;
+
+        const fetchMultiple = async () => {
+          // Fetch 3 pages in parallel (600 rows)
+          try {
+            await Promise.all([
+              fetchNextPage(),
+              new Promise((resolve) => setTimeout(resolve, 100)).then(() =>
+                fetchNextPage(),
+              ),
+              new Promise((resolve) => setTimeout(resolve, 200)).then(() =>
+                fetchNextPage(),
+              ),
+            ]);
+          } catch (error) {
+            console.error("Error fetching multiple pages:", error);
+          } finally {
+            isFetchingMultiple.current = false;
+            lastFetchTime.current = Date.now();
+          }
+        };
+
+        void fetchMultiple();
+      } else {
+        // Normal single page fetch
+        lastFetchTime.current = now;
+        void fetchNextPage();
+      }
     }
   }, [
     rowVirtualizer.getVirtualItems(),
     data?.rows.length,
-    data?.totalCount,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
   ]);
+
+  /* ---------- Preload on mount ---------- */
+  useEffect(() => {
+    // Preload 2 extra pages immediately on mount for better initial experience
+    if (data && data.rows.length < 600 && hasNextPage && !isFetchingNextPage) {
+      console.log("🎯 Preloading initial pages...");
+      void fetchNextPage();
+    }
+  }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   /* ---------- Keyboard ---------- */
   useKeyboardNavigation({
@@ -336,7 +353,7 @@ export default function TableClient() {
           focusedColumnIndex={selectedCell?.colIndex ?? null}
           rowVirtualizer={rowVirtualizer}
           tableContainerRef={tableContainerRef}
-          isFetchingNextPage={isFetchingNextPage}
+          isFetchingNextPage={isFetchingNextPage || isFetchingMultiple.current}
         />
       </div>
     </div>
