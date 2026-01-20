@@ -119,54 +119,37 @@ export default function SearchBar({
   const dropdown = (
     <div
       ref={dropdownRef}
-      className="fixed z-[9999] w-[320px] rounded-lg border border-zinc-200 bg-white shadow-xl"
+      className="fixed z-[9999] w-[400px] rounded-lg border border-zinc-200 bg-white shadow-xl"
       style={{
         top: `${position.top}px`,
         right: `${position.right}px`,
       }}
     >
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2">
-        {/* Search Icon */}
-        <Search size={16} className="text-zinc-400" />
-
+      {/* Main Search Row */}
+      <div className="flex items-center gap-3 px-3 py-2.5">
         {/* Search Input */}
         <input
           ref={inputRef}
           type="text"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Find in table"
+          placeholder="Find in view..."
           className="flex-1 text-sm text-zinc-900 placeholder-zinc-400 outline-none"
         />
 
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="rounded p-0.5 hover:bg-zinc-100"
-          aria-label="Close search"
-        >
-          <X size={16} className="text-zinc-500" />
-        </button>
-      </div>
+        {/* Results Counter (when searching) */}
+        {searchQuery && totalResults > 0 && (
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <span className="text-xs text-zinc-600">
+              {currentResultIndex + 1} of {totalResults}
+            </span>
 
-      {/* Results Info */}
-      {searchQuery && (
-        <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-          <span className="text-xs text-zinc-600">
-            {totalResults > 0
-              ? `${currentResultIndex + 1} of ${totalResults} ${
-                  totalResults === 1 ? "record" : "records"
-                }`
-              : "No records found"}
-          </span>
-
-          {/* Navigation Buttons */}
-          {totalResults > 0 && (
-            <div className="flex items-center gap-1">
+            {/* Navigation Buttons */}
+            <div className="flex items-center gap-0.5">
               <button
                 onClick={onPreviousResult}
                 disabled={currentResultIndex === 0}
-                className="rounded p-1 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded p-1 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-30"
                 aria-label="Previous result"
                 title="Previous (Shift+Enter)"
               >
@@ -175,21 +158,41 @@ export default function SearchBar({
               <button
                 onClick={onNextResult}
                 disabled={currentResultIndex >= totalResults - 1}
-                className="rounded p-1 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded p-1 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-30"
                 aria-label="Next result"
                 title="Next (Enter)"
               >
                 <ChevronDown size={14} className="text-zinc-600" />
               </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Empty state or instructions */}
-      {!searchQuery && (
-        <div className="px-3 py-6 text-center text-xs text-zinc-500">
-          Type to search across all fields
+        {/* Ask Omni Badge */}
+        <button
+          className="flex-shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+          onClick={() => {
+            // TODO: Implement Ask Omni functionality
+            console.log("Ask Omni clicked");
+          }}
+        >
+          Ask Omni
+        </button>
+
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 rounded p-1 hover:bg-zinc-100"
+          aria-label="Close search"
+        >
+          <X size={16} className="text-zinc-500" />
+        </button>
+      </div>
+
+      {/* No results message */}
+      {searchQuery && totalResults === 0 && (
+        <div className="border-t border-zinc-200 px-3 py-4 text-center">
+          <p className="text-xs text-zinc-500">No records found</p>
         </div>
       )}
     </div>
