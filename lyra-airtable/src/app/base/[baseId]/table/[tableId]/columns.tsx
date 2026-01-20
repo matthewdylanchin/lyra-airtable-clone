@@ -189,7 +189,7 @@ export function createColumns({
 
         // ✅ Check if this cell matches the search query
         const cellValueStr = value != null ? String(value) : "";
-        const searchLower = searchQuery?.toLowerCase() || "";
+        const searchLower = searchQuery?.toLowerCase() ?? "";
         const cellLower = cellValueStr.toLowerCase();
 
         const isExactMatch =
