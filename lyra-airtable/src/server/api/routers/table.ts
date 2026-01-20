@@ -179,10 +179,11 @@ export const tableRouter = createTRPCRouter({
         tableId: z.string(),
         limit: z.number().int().min(1).max(10000).default(5000),
         cursor: z.number().int().optional(), // rowIndex to start from
+        searchQuery: z.string().optional(), // ✅ Keep in schema but don't use for filtering
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { tableId, limit, cursor } = input;
+      const { tableId, limit, cursor } = input; // ✅ Don't destructure searchQuery
 
       const table = await ctx.db.table.findFirst({
         where: {
@@ -194,23 +195,27 @@ export const tableRouter = createTRPCRouter({
 
       if (!table) throw new Error("UNAUTHORIZED");
 
-      const [columns, rows, totalCount] = await Promise.all([
-        ctx.db.column.findMany({
-          where: { tableId: table.id },
-          orderBy: { order: "asc" },
-          select: { id: true, name: true, type: true, order: true },
-        }),
+      const columns = await ctx.db.column.findMany({
+        where: { tableId: table.id },
+        orderBy: { order: "asc" },
+        select: { id: true, name: true, type: true, order: true },
+      });
+
+      // ✅ Simple row query - no search filtering
+      const rowWhere = {
+        tableId: table.id,
+        ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+      };
+
+      const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
-          where: {
-            tableId: table.id,
-            ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
-          },
+          where: rowWhere,
           orderBy: { rowIndex: "asc" },
-          take: limit + 1, // Fetch one extra to determine if there's more
+          take: limit + 1,
           select: { id: true, rowIndex: true },
         }),
         ctx.db.row.count({
-          where: { tableId: table.id },
+          where: { tableId: table.id }, // ✅ Total count of ALL rows, not filtered
         }),
       ]);
 

@@ -10,8 +10,10 @@ import { api } from "@/trpc/react";
 import { useTableData } from "./hooks/useTableData";
 import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
+import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
+import SearchBar from "./Components/Searchbar";
 import type {
   SelectedCell,
   ColumnInsertPosition,
@@ -22,6 +24,16 @@ export default function TableClient() {
   /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+
+  /* ---------- View Config (Search, Filter, Sort) ---------- */
+  /* ---------- Search from Context ---------- */
+  const {
+    searchBarOpen,
+    setSearchBarOpen,
+    searchQuery,
+    setSearchQuery,
+    searchButtonRef,
+  } = useTableView();
 
   /* ---------- Column Sizing State with localStorage ---------- */
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -63,12 +75,17 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 5000 },
+    {
+      tableId,
+      limit: 5000,
+      searchQuery: searchQuery || undefined, // Pass search query to API
+    },
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
+      placeholderData: (previousData) => previousData,
     },
   );
 
@@ -207,6 +224,71 @@ export default function TableClient() {
     },
   });
 
+  // ✅ NEW: Track which specific match we're focused on
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  // ✅ NEW: Calculate all matching cells whenever search changes
+  const matchingCells = useMemo(() => {
+    if (!searchQuery || !data) return [];
+
+    const matches: Array<{
+      rowId: string;
+      columnId: string;
+      rowIndex: number;
+      colIndex: number;
+    }> = [];
+
+    data.rows.forEach((row, rowIndex) => {
+      data.columns.forEach((col, colIndex) => {
+        const cellKey = `${row.id}:${col.id}`;
+        const cell = cellByKey.get(cellKey); // ✅ Correct
+        const value = cell?.textValue ?? "";
+
+        if (value?.toLowerCase().includes(searchQuery.toLowerCase())) {
+          matches.push({
+            rowId: row.id,
+            columnId: col.id,
+            rowIndex,
+            colIndex: colIndex + 1, // +1 because of index column
+          });
+        }
+      });
+    });
+
+    return matches;
+  }, [searchQuery, data, cellByKey]);
+
+  // ✅ NEW: Reset match index when search changes
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [searchQuery]);
+
+  // ✅ NEW: Get current focused match
+  const currentMatch = matchingCells[currentMatchIndex] ?? null;
+
+  // ✅ NEW: Navigate to next/previous match
+  const goToNextMatch = useCallback(() => {
+    if (matchingCells.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % matchingCells.length);
+  }, [matchingCells.length]);
+
+  const goToPreviousMatch = useCallback(() => {
+    if (matchingCells.length === 0) return;
+    setCurrentMatchIndex((prev) =>
+      prev === 0 ? matchingCells.length - 1 : prev - 1,
+    );
+  }, [matchingCells.length]);
+
+  // ✅ NEW: Scroll to current match
+  useEffect(() => {
+    if (!currentMatch || searchBarOpen) return; // ✅ Don't scroll if search is open
+
+    setSelectedCell({
+      rowIndex: currentMatch.rowIndex,
+      colIndex: currentMatch.colIndex,
+    });
+  }, [currentMatch, searchBarOpen]); // ✅ Add searchBarOpen to deps
+
   /* ---------- Columns ---------- */
   const columns = useMemo(
     () =>
@@ -227,6 +309,8 @@ export default function TableClient() {
           setAddColumnOpen({ insert, position });
         },
         upsert,
+        searchQuery, // ✅ Add this
+        currentMatch,
       }),
     [
       data,
@@ -237,6 +321,8 @@ export default function TableClient() {
       cancelEdit,
       setDraft,
       upsert,
+      searchQuery, // ✅ Add to dependency array
+      currentMatch,
     ],
   );
 
@@ -389,7 +475,7 @@ export default function TableClient() {
     }
   }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  /* ---------- Keyboard ---------- */
+  /* ---------- Keyboard Shortcuts ---------- */
   useKeyboardNavigation({
     table,
     selectedCell,
@@ -398,6 +484,19 @@ export default function TableClient() {
     startEdit,
     setDraft,
   });
+
+  // ✨ Add Cmd/Ctrl+F shortcut to open search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchBarOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   /* ---------- Loading / error ---------- */
   if (isLoading) {
@@ -427,6 +526,23 @@ export default function TableClient() {
   /* ---------- Render ---------- */
   return (
     <div className="flex h-full flex-col">
+      {/* Search Bar */}
+      <SearchBar
+        isOpen={searchBarOpen}
+        onClose={() => {
+          setSearchBarOpen(false);
+          setSearchQuery("");
+          setCurrentMatchIndex(0);
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        totalResults={matchingCells.length}
+        currentResultIndex={currentMatchIndex}
+        onNextResult={goToNextMatch}
+        onPreviousResult={goToPreviousMatch}
+        searchButtonRef={searchButtonRef}
+      />
+
       {(localError ?? upsert.error) && (
         <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
           {localError ?? upsert.error?.message}
@@ -447,6 +563,7 @@ export default function TableClient() {
             isFetchingMultiple.current ||
             isLoadingJump.current
           }
+          onOpenSearch={() => setSearchBarOpen(true)}
         />
       </div>
     </div>

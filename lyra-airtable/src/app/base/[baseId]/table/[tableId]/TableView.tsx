@@ -25,6 +25,7 @@ export function TableView({
   rowVirtualizer,
   tableContainerRef,
   isFetchingNextPage,
+  onOpenSearch, // ✅ Add this
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -34,6 +35,7 @@ export function TableView({
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
   isFetchingNextPage: boolean;
+  onOpenSearch: () => void; // ✅ Add this type
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();

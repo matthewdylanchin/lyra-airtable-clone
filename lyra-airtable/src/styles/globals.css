@@ -1,6 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.search-highlight {
+  background-color: #fef3c7; /* yellow-100 */
+  border-left: 2px solid #f59e0b; /* amber-500 */
+}
+
+.search-highlight-active {
+  background-color: #fde68a; /* yellow-200 */
+  border-left: 3px solid #d97706; /* amber-600 */
+}
+
+/* Highlight the row number for search results */
+.search-row-highlight {
+  background-color: #fef3c7;
+  font-weight: 600;
 }
