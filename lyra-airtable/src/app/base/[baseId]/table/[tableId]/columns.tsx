@@ -119,7 +119,6 @@ export function createColumns({
       minSize: 50,
       cell: (info) => {
         // ✅ Check if this row has any matching cells
-        const rowId = info.row.original.__rowId;
         const hasMatch =
           searchQuery &&
           data.columns.some((col) => {
@@ -135,9 +134,13 @@ export function createColumns({
         return (
           <div
             className={cn(
-              "flex h-full w-full items-center justify-center text-sm text-gray-600", // ✅ Added w-full
-              hasMatch && "bg-amber-50 font-semibold", // ✅ Lighter amber for row numbers
+              "flex items-center justify-center text-sm text-gray-600",
+              hasMatch && "bg-amber-50 font-semibold",
             )}
+            style={{
+              height: "35px", // ✅ Match your row height explicitly
+              width: "100%",
+            }}
           >
             {info.row.index + 1}
           </div>
