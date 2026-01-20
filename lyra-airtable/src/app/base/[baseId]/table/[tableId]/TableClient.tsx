@@ -10,8 +10,10 @@ import { api } from "@/trpc/react";
 import { useTableData } from "./hooks/useTableData";
 import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
+import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
 import { TableView } from "./TableView";
+import SearchBar from "./Components/Searchbar";
 import type {
   SelectedCell,
   ColumnInsertPosition,
@@ -22,6 +24,16 @@ export default function TableClient() {
   /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+
+  /* ---------- View Config (Search, Filter, Sort) ---------- */
+  /* ---------- Search from Context ---------- */
+  const {
+    searchBarOpen,
+    setSearchBarOpen,
+    searchQuery,
+    setSearchQuery,
+    searchButtonRef,
+  } = useTableView();
 
   /* ---------- Column Sizing State with localStorage ---------- */
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -63,7 +75,11 @@ export default function TableClient() {
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(
-    { tableId, limit: 5000 },
+    {
+      tableId,
+      limit: 5000,
+      searchQuery: searchQuery || undefined, // Pass search query to API
+    },
     {
       enabled: !!tableId,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -389,7 +405,7 @@ export default function TableClient() {
     }
   }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  /* ---------- Keyboard ---------- */
+  /* ---------- Keyboard Shortcuts ---------- */
   useKeyboardNavigation({
     table,
     selectedCell,
@@ -398,6 +414,19 @@ export default function TableClient() {
     startEdit,
     setDraft,
   });
+
+  // ✨ Add Cmd/Ctrl+F shortcut to open search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchBarOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   /* ---------- Loading / error ---------- */
   if (isLoading) {
@@ -427,6 +456,26 @@ export default function TableClient() {
   /* ---------- Render ---------- */
   return (
     <div className="flex h-full flex-col">
+      {/* Search Bar */}
+      <SearchBar
+        isOpen={searchBarOpen}
+        onClose={() => {
+          setSearchBarOpen(false);
+          setSearchQuery("");
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        totalResults={data.totalCount}
+        currentResultIndex={0}
+        onNextResult={() => {
+          console.log("Next result");
+        }}
+        onPreviousResult={() => {
+          console.log("Previous result");
+        }}
+        searchButtonRef={searchButtonRef} // ✅ Add this line
+      />
+
       {(localError ?? upsert.error) && (
         <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
           {localError ?? upsert.error?.message}
@@ -447,6 +496,7 @@ export default function TableClient() {
             isFetchingMultiple.current ||
             isLoadingJump.current
           }
+          onOpenSearch={() => setSearchBarOpen(true)}
         />
       </div>
     </div>

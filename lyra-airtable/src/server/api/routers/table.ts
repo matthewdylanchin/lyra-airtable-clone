@@ -179,10 +179,11 @@ export const tableRouter = createTRPCRouter({
         tableId: z.string(),
         limit: z.number().int().min(1).max(10000).default(5000),
         cursor: z.number().int().optional(), // rowIndex to start from
+        searchQuery: z.string().optional(), // ✅ Search query parameter
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { tableId, limit, cursor } = input;
+      const { tableId, limit, cursor, searchQuery } = input;
 
       const table = await ctx.db.table.findFirst({
         where: {
@@ -194,23 +195,65 @@ export const tableRouter = createTRPCRouter({
 
       if (!table) throw new Error("UNAUTHORIZED");
 
-      const [columns, rows, totalCount] = await Promise.all([
-        ctx.db.column.findMany({
-          where: { tableId: table.id },
-          orderBy: { order: "asc" },
-          select: { id: true, name: true, type: true, order: true },
-        }),
-        ctx.db.row.findMany({
+      const columns = await ctx.db.column.findMany({
+        where: { tableId: table.id },
+        orderBy: { order: "asc" },
+        select: { id: true, name: true, type: true, order: true },
+      });
+
+      // ✅ Build row WHERE clause with optional search
+      let rowWhere: any = {
+        tableId: table.id,
+        ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+      };
+
+      // ✅ If search query exists, filter rows that have matching cells
+      if (searchQuery && searchQuery.trim()) {
+        const trimmedQuery = searchQuery.trim();
+
+        // Find all cells that match the search query
+        const matchingCells = await ctx.db.cell.findMany({
           where: {
-            tableId: table.id,
-            ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+            row: { tableId: table.id },
+            textValue: {
+              contains: trimmedQuery,
+              mode: "insensitive",
+            },
           },
+          select: { rowId: true },
+          distinct: ["rowId"],
+        });
+
+        const matchingRowIds = matchingCells.map((cell) => cell.rowId);
+
+        // If no matches, return empty result early
+        if (matchingRowIds.length === 0) {
+          return {
+            table,
+            columns,
+            rows: [],
+            cells: [],
+            totalCount: 0,
+            nextCursor: undefined,
+          };
+        }
+
+        // Add rowId filter to WHERE clause
+        rowWhere = {
+          ...rowWhere,
+          id: { in: matchingRowIds },
+        };
+      }
+
+      const [rows, totalCount] = await Promise.all([
+        ctx.db.row.findMany({
+          where: rowWhere,
           orderBy: { rowIndex: "asc" },
           take: limit + 1, // Fetch one extra to determine if there's more
           select: { id: true, rowIndex: true },
         }),
         ctx.db.row.count({
-          where: { tableId: table.id },
+          where: rowWhere,
         }),
       ]);
 
