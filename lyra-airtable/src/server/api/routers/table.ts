@@ -178,12 +178,31 @@ export const tableRouter = createTRPCRouter({
       z.object({
         tableId: z.string(),
         limit: z.number().int().min(1).max(10000).default(5000),
-        cursor: z.number().int().optional(), // rowIndex to start from
-        searchQuery: z.string().optional(), // ✅ Keep in schema but don't use for filtering
+        cursor: z.number().int().optional(),
+        searchQuery: z.string().optional(),
+        // ✅ Remove 'type' requirement - backend will determine it
+        filters: z
+          .array(
+            z.object({
+              columnId: z.string(),
+              operator: z.string(),
+              value: z.string(),
+            }),
+          )
+          .optional(),
+        sorts: z
+          .array(
+            z.object({
+              columnId: z.string(),
+              type: z.enum(["text", "number"]),
+              direction: z.enum(["asc", "desc"]),
+            }),
+          )
+          .optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { tableId, limit, cursor } = input; // ✅ Don't destructure searchQuery
+      const { tableId, limit, cursor, filters, sorts } = input;
 
       const table = await ctx.db.table.findFirst({
         where: {
@@ -201,27 +220,164 @@ export const tableRouter = createTRPCRouter({
         select: { id: true, name: true, type: true, order: true },
       });
 
-      // ✅ Simple row query - no search filtering
-      const rowWhere = {
-        tableId: table.id,
-        ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
-      };
+      let filteredRowIds: string[] | null = null;
+
+      // ✅ Enhanced filtering - determine type from columns
+      if (filters?.length) {
+        const cellFilterPromises = filters.map(async (filter) => {
+          const base: any = { columnId: filter.columnId };
+
+          // ✅ Find the column to determine type
+          const column = columns.find((c) => c.id === filter.columnId);
+          const isNumberColumn = column?.type === "NUMBER";
+
+          if (isNumberColumn) {
+            const val = Number(filter.value);
+
+            switch (filter.operator) {
+              case "equals":
+                base.numberValue = { equals: val };
+                break;
+              case "not_equals":
+                base.numberValue = { not: { equals: val } };
+                break;
+              case "gt":
+                base.numberValue = { gt: val };
+                break;
+              case "gte":
+                base.numberValue = { gte: val };
+                break;
+              case "lt":
+                base.numberValue = { lt: val };
+                break;
+              case "lte":
+                base.numberValue = { lte: val };
+                break;
+              case "empty":
+                base.numberValue = null;
+                break;
+              case "not_empty":
+                base.numberValue = { not: null };
+                break;
+            }
+          } else {
+            // Text column
+            switch (filter.operator) {
+              case "contains":
+                base.textValue = {
+                  contains: filter.value,
+                  mode: "insensitive",
+                };
+                break;
+              case "not_contains":
+                base.textValue = {
+                  not: { contains: filter.value, mode: "insensitive" },
+                };
+                break;
+              case "equals":
+                base.textValue = { equals: filter.value, mode: "insensitive" };
+                break;
+              case "not_equals":
+                base.textValue = {
+                  not: { equals: filter.value, mode: "insensitive" },
+                };
+                break;
+              case "empty":
+                base.OR = [{ textValue: null }, { textValue: "" }];
+                break;
+              case "not_empty":
+                base.AND = [
+                  { textValue: { not: null } },
+                  { textValue: { not: "" } },
+                ];
+                break;
+            }
+          }
+
+          const matchingCells = await ctx.db.cell.findMany({
+            where: base,
+            select: { rowId: true },
+            distinct: ["rowId"],
+          });
+
+          return new Set(matchingCells.map((c) => c.rowId));
+        });
+
+        const rowIdSets = await Promise.all(cellFilterPromises);
+
+        if (rowIdSets.length > 0) {
+          filteredRowIds = Array.from(rowIdSets[0]!);
+
+          for (let i = 1; i < rowIdSets.length; i++) {
+            const currentSet = rowIdSets[i]!;
+            filteredRowIds = filteredRowIds.filter((id) => currentSet.has(id));
+          }
+        }
+      }
+
+      let sortedRowIds: string[] | null = null;
+
+      // Sorting logic
+      const firstSort = sorts?.[0];
+
+      if (firstSort) {
+        const orderBy: any = {};
+
+        if (firstSort.type === "text") {
+          orderBy.textValue = firstSort.direction;
+        } else if (firstSort.type === "number") {
+          orderBy.numberValue = firstSort.direction;
+        }
+
+        const sortedCells = await ctx.db.cell.findMany({
+          where: {
+            columnId: firstSort.columnId,
+            ...(filteredRowIds ? { rowId: { in: filteredRowIds } } : {}),
+          },
+          orderBy,
+          select: { rowId: true },
+          take: limit + 1,
+          skip: cursor ? 1 : 0,
+        });
+
+        sortedRowIds = sortedCells.map((c) => c.rowId);
+      }
+
+      // Build final rowWhere condition
+      const rowWhere: any = { tableId: table.id };
+
+      if (cursor !== undefined) {
+        rowWhere.rowIndex = { gt: cursor };
+      }
+
+      if (filteredRowIds && sortedRowIds) {
+        const filteredSet = new Set(filteredRowIds);
+        const intersected = sortedRowIds.filter((id) => filteredSet.has(id));
+        rowWhere.id = { in: intersected };
+      } else if (sortedRowIds) {
+        rowWhere.id = { in: sortedRowIds };
+      } else if (filteredRowIds) {
+        rowWhere.id = { in: filteredRowIds };
+      }
 
       const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
           where: rowWhere,
-          orderBy: { rowIndex: "asc" },
+          orderBy: undefined, // already sorted manually via sortedRowIds
           take: limit + 1,
           select: { id: true, rowIndex: true },
         }),
         ctx.db.row.count({
-          where: { tableId: table.id }, // ✅ Total count of ALL rows, not filtered
+          where: {
+            tableId: table.id,
+            ...(filteredRowIds ? { id: { in: filteredRowIds } } : {}),
+          },
         }),
       ]);
 
-      // Check if there are more rows
       const hasMore = rows.length > limit;
       const resultRows = hasMore ? rows.slice(0, limit) : rows;
+
       const nextCursor = hasMore
         ? resultRows[resultRows.length - 1]?.rowIndex
         : undefined;

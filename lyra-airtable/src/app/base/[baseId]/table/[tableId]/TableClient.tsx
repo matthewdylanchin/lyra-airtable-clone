@@ -6,7 +6,7 @@ import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
-
+import type { FilterCondition, FilterOperator } from "./types";
 import { useTableData } from "./hooks/useTableData";
 import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
@@ -19,6 +19,7 @@ import type {
   ColumnInsertPosition,
   AddColumnState,
 } from "./types";
+import FilterPanel from "./Components/FilterPanel";
 
 export default function TableClient() {
   /* ---------- Routing ---------- */
@@ -33,6 +34,9 @@ export default function TableClient() {
     searchQuery,
     setSearchQuery,
     searchButtonRef,
+    filterPanelOpen,
+    setFilterPanelOpen,
+    filterButtonRef,
   } = useTableView();
 
   /* ---------- Column Sizing State with localStorage ---------- */
@@ -48,6 +52,8 @@ export default function TableClient() {
     }
     return {} as ColumnSizingState;
   });
+
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -79,6 +85,14 @@ export default function TableClient() {
       tableId,
       limit: 5000,
       searchQuery: searchQuery || undefined, // Pass search query to API
+      filters:
+        filters.length > 0
+          ? filters.map((f) => ({
+              columnId: f.columnId,
+              operator: f.operator,
+              value: f.value ?? "",
+            }))
+          : undefined,
     },
     {
       enabled: !!tableId,
@@ -548,6 +562,15 @@ export default function TableClient() {
           {localError ?? upsert.error?.message}
         </div>
       )}
+
+      <FilterPanel
+        isOpen={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        columns={data?.columns ?? []}
+        filters={filters}
+        onChange={setFilters}
+        triggerRef={filterButtonRef ?? undefined} // ✅ Now from context
+      />
 
       <div className="min-h-0 flex-1">
         <TableView

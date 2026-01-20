@@ -17,17 +17,25 @@ import {
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
 import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewContext";
+import { useState } from "react";
 
 export default function ViewActionBar() {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
-  const { setSearchBarOpen, setSearchButtonRef } = useTableView();
+  const {
+    setSearchBarOpen,
+    setSearchButtonRef,
+    setFilterPanelOpen,
+    setFilterButtonRef,
+  } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
 
   // Set the ref in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
-  }, [setSearchButtonRef]);
+    setFilterButtonRef(filterButtonRef);
+  }, [setSearchButtonRef, setFilterButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
     onSuccess: () => {
@@ -70,8 +78,13 @@ export default function ViewActionBar() {
             <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
           </button>
 
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
-            <Filter className="h-4 w-4 text-zinc-500" /> Filter
+          <button
+            ref={filterButtonRef}
+            onClick={() => setFilterPanelOpen(true)}
+            className="flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100"
+          >
+            <Filter className="h-4 w-4 text-zinc-500" />
+            Filter
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">

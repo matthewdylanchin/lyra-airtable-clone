@@ -9,6 +9,11 @@ type TableViewContextType = {
   setSearchQuery: (query: string) => void;
   searchButtonRef: React.RefObject<HTMLButtonElement | null> | null;
   setSearchButtonRef: (ref: React.RefObject<HTMLButtonElement | null>) => void;
+
+  filterPanelOpen: boolean;
+  setFilterPanelOpen: (open: boolean) => void;
+  filterButtonRef: React.RefObject<HTMLButtonElement | null> | null;
+  setFilterButtonRef: (ref: React.RefObject<HTMLButtonElement | null>) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -17,6 +22,10 @@ export function TableViewProvider({ children }: { children: ReactNode }) {
   const [searchBarOpen, setSearchBarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchButtonRef, setSearchButtonRef] =
+    useState<React.RefObject<HTMLButtonElement | null> | null>(null);
+
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterButtonRef, setFilterButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
 
   return (
@@ -28,6 +37,10 @@ export function TableViewProvider({ children }: { children: ReactNode }) {
         setSearchQuery,
         searchButtonRef,
         setSearchButtonRef,
+        filterPanelOpen,
+        setFilterPanelOpen,
+        filterButtonRef,
+        setFilterButtonRef,
       }}
     >
       {children}

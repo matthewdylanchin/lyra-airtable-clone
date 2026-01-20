@@ -50,3 +50,24 @@ export type AddColumnState = {
   insert: ColumnInsertPosition;
   position: { top: number; left: number }; // Position below chevron
 } | null;
+
+export type FilterOperator =
+  // Text operators
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "not_equals"
+  | "empty"
+  | "not_empty"
+  // Number operators
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte";
+
+export interface FilterCondition {
+  id: string;
+  columnId: string;
+  operator: FilterOperator; // ✅ Specific type
+  value?: string;
+}
