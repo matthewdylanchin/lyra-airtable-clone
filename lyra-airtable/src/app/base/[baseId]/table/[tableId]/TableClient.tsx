@@ -224,6 +224,72 @@ export default function TableClient() {
     },
   });
 
+  // ✅ NEW: Track which specific match we're focused on
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  // ✅ NEW: Calculate all matching cells whenever search changes
+  const matchingCells = useMemo(() => {
+    if (!searchQuery || !data) return [];
+
+    const matches: Array<{
+      rowId: string;
+      columnId: string;
+      rowIndex: number;
+      colIndex: number;
+    }> = [];
+
+    data.rows.forEach((row, rowIndex) => {
+      data.columns.forEach((col, colIndex) => {
+        const cellKey = `${row.id}:${col.id}`;
+        const cell = cellByKey.get(cellKey); // ✅ Correct
+        const value = cell?.textValue ?? "";
+
+        if (value && value.toLowerCase().includes(searchQuery.toLowerCase())) {
+          matches.push({
+            rowId: row.id,
+            columnId: col.id,
+            rowIndex,
+            colIndex: colIndex + 1, // +1 because of index column
+          });
+        }
+      });
+    });
+
+    return matches;
+  }, [searchQuery, data, cellByKey]);
+
+  // ✅ NEW: Reset match index when search changes
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [searchQuery]);
+
+  // ✅ NEW: Get current focused match
+  const currentMatch = matchingCells[currentMatchIndex] ?? null;
+
+  // ✅ NEW: Navigate to next/previous match
+  const goToNextMatch = useCallback(() => {
+    if (matchingCells.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % matchingCells.length);
+  }, [matchingCells.length]);
+
+  const goToPreviousMatch = useCallback(() => {
+    if (matchingCells.length === 0) return;
+    setCurrentMatchIndex((prev) =>
+      prev === 0 ? matchingCells.length - 1 : prev - 1,
+    );
+  }, [matchingCells.length]);
+
+  // ✅ NEW: Scroll to current match
+  useEffect(() => {
+    if (!currentMatch) return;
+
+    // Set the selected cell to trigger scrolling
+    setSelectedCell({
+      rowIndex: currentMatch.rowIndex,
+      colIndex: currentMatch.colIndex,
+    });
+  }, [currentMatch, setSelectedCell]);
+
   /* ---------- Columns ---------- */
   const columns = useMemo(
     () =>
@@ -245,6 +311,7 @@ export default function TableClient() {
         },
         upsert,
         searchQuery, // ✅ Add this
+        currentMatch,
       }),
     [
       data,
@@ -256,6 +323,7 @@ export default function TableClient() {
       setDraft,
       upsert,
       searchQuery, // ✅ Add to dependency array
+      currentMatch,
     ],
   );
 
@@ -465,18 +533,15 @@ export default function TableClient() {
         onClose={() => {
           setSearchBarOpen(false);
           setSearchQuery("");
+          setCurrentMatchIndex(0);
         }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        totalResults={data.totalCount}
-        currentResultIndex={0}
-        onNextResult={() => {
-          console.log("Next result");
-        }}
-        onPreviousResult={() => {
-          console.log("Previous result");
-        }}
-        searchButtonRef={searchButtonRef} // ✅ Add this line
+        totalResults={matchingCells.length}
+        currentResultIndex={currentMatchIndex}
+        onNextResult={goToNextMatch}
+        onPreviousResult={goToPreviousMatch}
+        searchButtonRef={searchButtonRef}
       />
 
       {(localError ?? upsert.error) && (

@@ -88,6 +88,7 @@ export function createColumns({
   onInsert,
   upsert,
   searchQuery, // ✅ Add this parameter
+  currentMatch,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -108,6 +109,12 @@ export function createColumns({
   ) => void;
   upsert: CellUpsertMutation;
   searchQuery?: string; // ✅ Add this type
+  currentMatch?: {
+    rowId: string;
+    columnId: string;
+    rowIndex: number;
+    colIndex: number;
+  } | null; // ✅ Add this type
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -135,7 +142,7 @@ export function createColumns({
           <div
             className={cn(
               "flex items-center justify-center text-sm text-gray-600",
-              hasMatch && "bg-amber-50 font-semibold",
+              hasMatch && "bg-amber-100 font-semibold",
             )}
             style={{
               height: "35px", // ✅ Match your row height explicitly
@@ -192,13 +199,14 @@ export function createColumns({
         const searchLower = searchQuery?.toLowerCase() ?? "";
         const cellLower = cellValueStr.toLowerCase();
 
-        const isExactMatch =
-          searchQuery && cellValueStr && cellLower === searchLower;
-        const isPartialMatch =
-          searchQuery &&
-          cellValueStr &&
-          cellLower.includes(searchLower) &&
-          !isExactMatch;
+        const isMatch =
+          searchQuery && cellValueStr && cellLower.includes(searchLower);
+
+        // ✅ Check if this is the CURRENT focused match (dark amber)
+        const isCurrentMatch =
+          isMatch &&
+          currentMatch?.rowId === rowId &&
+          currentMatch?.columnId === c.id;
 
         return (
           <div
@@ -206,8 +214,10 @@ export function createColumns({
               "relative flex h-9 w-full cursor-default items-center outline-none",
               isSelected && "ring-2 ring-blue-600 ring-inset",
               !isEditing && "hover:bg-zinc-50",
-              isExactMatch && "border-l-2 border-amber-200 bg-amber-200", // ✅ Darker amber for exact match
-              isPartialMatch && "border-l-2 border-amber-50 bg-amber-50", // ✅ Lighter amber for partial match
+              isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200", // ✅ Dark amber for focused match
+              isMatch &&
+                !isCurrentMatch &&
+                "border-l-2 border-amber-100 bg-amber-100", // ✅ Light amber for other matches
             )}
             onClick={() => setSelectedCell({ rowIndex, colIndex })}
             onDoubleClick={() => startEdit(rowId, c.id, "append")}
