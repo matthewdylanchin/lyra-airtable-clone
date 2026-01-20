@@ -87,6 +87,7 @@ export function createColumns({
   setDraft,
   onInsert,
   upsert,
+  searchQuery, // ✅ Add this parameter
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -106,6 +107,7 @@ export function createColumns({
     position: { top: number; left: number },
   ) => void;
   upsert: CellUpsertMutation;
+  searchQuery?: string; // ✅ Add this type
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -115,11 +117,32 @@ export function createColumns({
       header: "",
       size: 60,
       minSize: 50,
-      cell: (info) => (
-        <div className="flex h-full items-center justify-center text-sm text-gray-600">
-          {info.row.index + 1}
-        </div>
-      ),
+      cell: (info) => {
+        // ✅ Check if this row has any matching cells
+        const rowId = info.row.original.__rowId;
+        const hasMatch =
+          searchQuery &&
+          data.columns.some((col) => {
+            const cellValue = info.row.original[col.id];
+            return (
+              cellValue &&
+              String(cellValue)
+                .toLowerCase()
+                .includes(searchQuery.toLowerCase())
+            );
+          });
+
+        return (
+          <div
+            className={cn(
+              "flex h-full w-full items-center justify-center text-sm text-gray-600", // ✅ Added w-full
+              hasMatch && "bg-amber-50 font-semibold", // ✅ Lighter amber for row numbers
+            )}
+          >
+            {info.row.index + 1}
+          </div>
+        );
+      },
     },
 
     ...data.columns.map((c) => ({
@@ -161,12 +184,27 @@ export function createColumns({
           upsert.variables?.rowId === rowId &&
           upsert.variables?.columnId === c.id;
 
+        // ✅ Check if this cell matches the search query
+        const cellValueStr = value != null ? String(value) : "";
+        const searchLower = searchQuery?.toLowerCase() || "";
+        const cellLower = cellValueStr.toLowerCase();
+
+        const isExactMatch =
+          searchQuery && cellValueStr && cellLower === searchLower;
+        const isPartialMatch =
+          searchQuery &&
+          cellValueStr &&
+          cellLower.includes(searchLower) &&
+          !isExactMatch;
+
         return (
           <div
             className={cn(
-              "relative flex h-9 w-full cursor-default items-center outline-none", // ✅ Added flex and items-center
+              "relative flex h-9 w-full cursor-default items-center outline-none",
               isSelected && "ring-2 ring-blue-600 ring-inset",
               !isEditing && "hover:bg-zinc-50",
+              isExactMatch && "border-l-2 border-amber-200 bg-amber-200", // ✅ Darker amber for exact match
+              isPartialMatch && "border-l-2 border-amber-50 bg-amber-50", // ✅ Lighter amber for partial match
             )}
             onClick={() => setSelectedCell({ rowIndex, colIndex })}
             onDoubleClick={() => startEdit(rowId, c.id, "append")}
@@ -210,12 +248,10 @@ export function createColumns({
                 onBlur={() => {
                   commitEdit();
                 }}
-                // ✅ Use absolute positioning to fill entire cell
                 className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
                 style={{ boxShadow: "none" }}
               />
             ) : (
-              // ✅ Text naturally centered by parent's flex
               <span className="block truncate px-2.5 text-sm">
                 {String(value ?? "")}
               </span>

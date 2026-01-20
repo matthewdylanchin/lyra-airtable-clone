@@ -85,6 +85,7 @@ export default function TableClient() {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
+      placeholderData: (previousData) => previousData,
     },
   );
 
@@ -243,6 +244,7 @@ export default function TableClient() {
           setAddColumnOpen({ insert, position });
         },
         upsert,
+        searchQuery, // ✅ Add this
       }),
     [
       data,
@@ -253,6 +255,7 @@ export default function TableClient() {
       cancelEdit,
       setDraft,
       upsert,
+      searchQuery, // ✅ Add to dependency array
     ],
   );
 
