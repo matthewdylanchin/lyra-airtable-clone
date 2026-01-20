@@ -244,7 +244,7 @@ export default function TableClient() {
         const cell = cellByKey.get(cellKey); // ✅ Correct
         const value = cell?.textValue ?? "";
 
-        if (value && value.toLowerCase().includes(searchQuery.toLowerCase())) {
+        if (value?.toLowerCase().includes(searchQuery.toLowerCase())) {
           matches.push({
             rowId: row.id,
             columnId: col.id,
