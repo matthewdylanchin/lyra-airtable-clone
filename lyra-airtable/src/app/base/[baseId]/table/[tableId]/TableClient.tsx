@@ -281,14 +281,13 @@ export default function TableClient() {
 
   // ✅ NEW: Scroll to current match
   useEffect(() => {
-    if (!currentMatch) return;
+    if (!currentMatch || searchBarOpen) return; // ✅ Don't scroll if search is open
 
-    // Set the selected cell to trigger scrolling
     setSelectedCell({
       rowIndex: currentMatch.rowIndex,
       colIndex: currentMatch.colIndex,
     });
-  }, [currentMatch, setSelectedCell]);
+  }, [currentMatch, searchBarOpen]); // ✅ Add searchBarOpen to deps
 
   /* ---------- Columns ---------- */
   const columns = useMemo(
