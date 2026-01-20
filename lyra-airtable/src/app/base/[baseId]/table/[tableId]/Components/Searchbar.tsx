@@ -119,7 +119,7 @@ export default function SearchBar({
   const dropdown = (
     <div
       ref={dropdownRef}
-      className="fixed z-[9999] w-[400px] rounded-lg border border-zinc-200 bg-white shadow-xl"
+      className="fixed z-[9999] w-[350px] rounded-lg border border-zinc-200 bg-white shadow-xl"
       style={{
         top: `${position.top}px`,
         right: `${position.right}px`,
@@ -134,13 +134,13 @@ export default function SearchBar({
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Find in view..."
-          className="flex-1 text-sm text-zinc-900 placeholder-zinc-400 outline-none"
+          className="min-w-0 flex-1 text-sm text-zinc-900 placeholder-zinc-400 outline-none"
         />
 
         {/* Results Counter (when searching) */}
         {searchQuery && totalResults > 0 && (
           <div className="flex flex-shrink-0 items-center gap-2">
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs whitespace-nowrap text-zinc-600">
               {currentResultIndex + 1} of {totalResults}
             </span>
 
