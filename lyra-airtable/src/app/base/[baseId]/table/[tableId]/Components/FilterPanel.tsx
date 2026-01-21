@@ -64,7 +64,7 @@ function CustomDropdown({
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center justify-between rounded border border-zinc-200 bg-white px-3 py-1.5 text-sm transition-colors hover:border-zinc-300"
       >
-        <span>{selectedOption?.label || "Select"}</span>
+        <span>{selectedOption?.label ?? "Select"}</span>
         <svg
           width="12"
           height="12"
@@ -275,8 +275,8 @@ export default function FilterPanel({
                     <CustomDropdown
                       value={conjunctionMode}
                       options={[
-                        { value: "and", label: "And" },
-                        { value: "or", label: "Or" },
+                        { value: "and", label: "and" },
+                        { value: "or", label: "or" },
                       ]}
                       onChange={(v) =>
                         onConjunctionModeChange?.(v as "and" | "or")

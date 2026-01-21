@@ -56,7 +56,7 @@ export default function CustomDropdown({
       >
         <span className="flex items-center gap-2 truncate">
           {selectedOption?.icon}
-          {selectedOption?.label || placeholder}
+          {selectedOption?.label ?? placeholder}
         </span>
         <ChevronDown
           className={`h-4 w-4 text-zinc-500 transition-transform ${

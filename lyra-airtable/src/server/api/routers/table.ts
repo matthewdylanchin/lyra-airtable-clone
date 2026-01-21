@@ -222,83 +222,103 @@ export const tableRouter = createTRPCRouter({
       // Filtering logic
       if (filters?.length) {
         const cellFilterPromises = filters.map(async (filter) => {
-          const base: any = { columnId: filter.columnId };
+          const base: Record<string, unknown> = {
+            columnId: filter.columnId,
+          };
 
           const column = columns.find((c) => c.id === filter.columnId);
           const isNumberColumn = column?.type === "NUMBER";
 
           if (isNumberColumn) {
             const val = Number(filter.value);
-
             switch (filter.operator) {
               case "equals":
-                base.numberValue = { equals: val };
+                Object.assign(base, { numberValue: { equals: val } });
                 break;
+
               case "not_equals":
-                base.numberValue = { not: { equals: val } };
+                Object.assign(base, { numberValue: { not: { equals: val } } });
                 break;
+
               case "gt":
-                base.numberValue = { gt: val };
+                Object.assign(base, { numberValue: { gt: val } });
                 break;
+
               case "gte":
-                base.numberValue = { gte: val };
+                Object.assign(base, { numberValue: { gte: val } });
                 break;
+
               case "lt":
-                base.numberValue = { lt: val };
+                Object.assign(base, { numberValue: { lt: val } });
                 break;
+
               case "lte":
-                base.numberValue = { lte: val };
+                Object.assign(base, { numberValue: { lte: val } });
                 break;
+
               case "empty":
-                base.numberValue = null;
+                Object.assign(base, { numberValue: null });
                 break;
+
               case "not_empty":
-                base.numberValue = { not: null };
+                Object.assign(base, { numberValue: { not: null } });
                 break;
             }
           } else {
             switch (filter.operator) {
               case "contains":
-                base.textValue = {
-                  contains: filter.value,
-                  mode: "insensitive",
-                };
-                break;
-
-              case "not_contains":
-                base.NOT = {
+                Object.assign(base, {
                   textValue: {
                     contains: filter.value,
                     mode: "insensitive",
                   },
-                };
+                });
+                break;
+
+              case "not_contains":
+                Object.assign(base, {
+                  NOT: {
+                    textValue: {
+                      contains: filter.value,
+                      mode: "insensitive",
+                    },
+                  },
+                });
                 break;
 
               case "equals":
-                base.textValue = {
-                  equals: filter.value,
-                  mode: "insensitive",
-                };
-                break;
-
-              case "not_equals":
-                base.NOT = {
+                Object.assign(base, {
                   textValue: {
                     equals: filter.value,
                     mode: "insensitive",
                   },
-                };
+                });
+                break;
+
+              case "not_equals":
+                Object.assign(base, {
+                  NOT: {
+                    textValue: {
+                      equals: filter.value,
+                      mode: "insensitive",
+                    },
+                  },
+                });
                 break;
 
               case "empty":
-                base.OR = [{ textValue: null }, { textValue: "" }];
+                Object.assign(base, {
+                  OR: [{ textValue: null }, { textValue: "" }],
+                });
                 break;
 
               case "not_empty":
-                base.AND = [
-                  { textValue: { not: null } },
-                  { textValue: { not: "" } },
-                ];
+                Object.assign(base, {
+                  AND: [
+                    { textValue: { not: null } },
+                    { textValue: { not: "" } },
+                  ],
+                });
                 break;
             }
           }
@@ -348,7 +368,7 @@ export const tableRouter = createTRPCRouter({
           });
         }
 
-        const orderBy: any = {};
+        const orderBy: Record<string, "asc" | "desc"> = {};
 
         // Use the ACTUAL column type from database
         if (column.type === "NUMBER") {
@@ -357,7 +377,7 @@ export const tableRouter = createTRPCRouter({
           orderBy.textValue = firstSort.direction;
         }
 
-        const sortedCells = await ctx.db.cell.findMany({
+        const sortedCells = (await ctx.db.cell.findMany({
           where: {
             columnId: firstSort.columnId,
             ...(filteredRowIds ? { rowId: { in: filteredRowIds } } : {}),
@@ -367,7 +387,11 @@ export const tableRouter = createTRPCRouter({
             textValue: true,
             numberValue: true,
           },
-        });
+        })) as Array<{
+          rowId: string;
+          textValue: string | null;
+          numberValue: number | null;
+        }>;
 
         // ✅ Sort in memory with case-insensitive comparison
         sortedCells.sort((a, b) => {
@@ -392,7 +416,9 @@ export const tableRouter = createTRPCRouter({
       }
 
       // Build final rowWhere condition
-      const rowWhere: any = { tableId: table.id };
+      const rowWhere: Record<string, unknown> = {
+        tableId: table.id,
+      };
 
       if (sortedRowIds) {
         // ✅ When sorting, use sorted order
@@ -407,7 +433,7 @@ export const tableRouter = createTRPCRouter({
 
       const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
-          where: rowWhere,
+          where: rowWhere as any,
           orderBy: sortedRowIds
             ? undefined // Already sorted via sortedRowIds order
             : { rowIndex: "asc" }, // Default sort
