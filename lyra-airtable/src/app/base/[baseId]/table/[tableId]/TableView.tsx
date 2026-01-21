@@ -26,6 +26,7 @@ export function TableView({
   tableContainerRef,
   isFetchingNextPage,
   onOpenSearch, // ✅ Add this
+  queryKey,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -36,6 +37,14 @@ export function TableView({
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
   isFetchingNextPage: boolean;
   onOpenSearch: () => void; // ✅ Add this type
+  queryKey: {
+    tableId: string;
+    limit: number;
+    searchQuery?: string;
+    filterConjunction?: "and" | "or";
+    filters?: any[];
+    sorts?: any[];
+  };
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
@@ -46,20 +55,17 @@ export function TableView({
   const appendRow = api.row.create.useMutation({
     onMutate: async () => {
       // Cancel outgoing refetches
-      await utils.table.getData.cancel({ tableId });
+      await utils.table.getData.cancel(queryKey);
 
       // Snapshot previous data
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // Get current row count
       const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
       const newRowIndex = currentRowCount;
 
       // ✨ Optimistically add row to cache
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         // Create temporary row with temp ID
@@ -105,17 +111,14 @@ export function TableView({
 
     onSuccess: async () => {
       // Refetch to get real IDs
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
     },
 
     onError: (err, variables, context) => {
       console.error("Failed to add row:", err);
       // Rollback
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
     },
   });
@@ -123,14 +126,11 @@ export function TableView({
   // ⚡ OPTIMISTIC: Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
     onMutate: async (variables) => {
-      await utils.table.getData.cancel({ tableId });
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      await utils.table.getData.cancel(queryKey);
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // Optimistically insert row
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         const tempRowId = `temp-row-${Date.now()}`;
@@ -184,17 +184,14 @@ export function TableView({
     },
 
     onSuccess: async () => {
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
       setRowMenu(null);
     },
 
     onError: (err, variables, context) => {
       console.error("Failed to insert row:", err);
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
       setRowMenu(null);
     },
@@ -203,14 +200,11 @@ export function TableView({
   // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
     onMutate: async (rowId) => {
-      await utils.table.getData.cancel({ tableId });
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      await utils.table.getData.cancel(queryKey);
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // Optimistically remove row
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old) return old;
 
         return {
@@ -228,17 +222,14 @@ export function TableView({
     },
 
     onSuccess: async () => {
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
       setRowMenu(null);
     },
 
     onError: (err, variables, context) => {
       console.error("Failed to delete row:", err);
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
       setRowMenu(null);
     },
@@ -457,7 +448,7 @@ export function TableView({
                 })}
                 <th className="w-25 max-w-25 min-w-25 border-r border-b border-l border-gray-200 px-0 py-0 text-xs font-medium text-gray-600">
                   <div className="flex h-full w-full items-center justify-center">
-                    <AddColumnButton tableId={tableId} />
+                    <AddColumnButton tableId={tableId} queryKey={queryKey} />
                   </div>
                 </th>
               </tr>
@@ -865,6 +856,7 @@ export function TableView({
           onClose={onCloseAddColumn}
           autoOpen
           initialPosition={addColumnOpen.position}
+          queryKey={queryKey}
         />
       )}
     </div>

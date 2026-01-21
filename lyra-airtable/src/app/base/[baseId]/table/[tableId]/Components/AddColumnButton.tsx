@@ -155,6 +155,7 @@ export default function AddColumnButton({
   autoOpen = false,
   targetColumnRef,
   initialPosition,
+  queryKey,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
@@ -162,6 +163,14 @@ export default function AddColumnButton({
   autoOpen?: boolean;
   targetColumnRef?: React.RefObject<HTMLElement | null>;
   initialPosition?: { top: number; left: number };
+  queryKey: {
+    tableId: string;
+    limit: number;
+    searchQuery?: string;
+    filterConjunction?: "and" | "or";
+    filters?: any[];
+    sorts?: any[];
+  };
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -189,16 +198,13 @@ export default function AddColumnButton({
   const createColumn = api.column.create.useMutation({
     onMutate: async (variables) => {
       // Cancel outgoing refetches
-      await utils.table.getData.cancel({ tableId });
+      await utils.table.getData.cancel(queryKey);
 
       // Snapshot previous data
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // ✨ Optimistically add column to cache
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         const tempColumnId = `temp-col-${Date.now()}`;
@@ -239,17 +245,14 @@ export default function AddColumnButton({
     onSuccess: async () => {
       console.log("✅ Column created successfully");
       // Refetch to get real IDs and correct order
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
     },
 
     onError: (error, variables, context) => {
       console.error("Create column error:", error);
       // Rollback on error
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
     },
   });
@@ -257,14 +260,11 @@ export default function AddColumnButton({
   // ⚡ OPTIMISTIC: Insert column at position
   const insertColumn = api.column.insertAtPosition.useMutation({
     onMutate: async (variables) => {
-      await utils.table.getData.cancel({ tableId });
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      await utils.table.getData.cancel(queryKey);
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // ✨ Optimistically insert column
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         const tempColumnId = `temp-col-${Date.now()}`;
@@ -321,16 +321,13 @@ export default function AddColumnButton({
 
     onSuccess: async () => {
       console.log("✅ Column inserted successfully");
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
     },
 
     onError: (error, variables, context) => {
       console.error("Insert column error:", error);
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
     },
   });

@@ -99,6 +99,29 @@ export default function TableClient() {
 
   const utils = api.useUtils();
 
+  const queryKey = {
+    tableId,
+    limit: 5000,
+    searchQuery: searchQuery || undefined,
+    filterConjunction,
+    filters:
+      filters.length > 0
+        ? filters.map((f: FilterCondition) => ({
+            columnId: f.columnId,
+            operator: f.operator,
+            value: f.value ?? "",
+          }))
+        : undefined,
+    sorts:
+      sorts.length > 0
+        ? sorts.map((s: SortType) => ({
+            columnId: s.columnId,
+            type: "text" as const,
+            direction: s.direction,
+          }))
+        : undefined,
+  };
+
   // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
   // Or pass sorts without trying to determine type here
   const {
@@ -108,38 +131,13 @@ export default function TableClient() {
     isFetchingNextPage,
     isLoading,
     error,
-  } = api.table.getData.useInfiniteQuery(
-    {
-      tableId,
-      limit: 5000,
-      searchQuery: searchQuery || undefined,
-      filterConjunction: filterConjunction,
-      filters:
-        filters.length > 0
-          ? filters.map((f: FilterCondition) => ({
-              columnId: f.columnId,
-              operator: f.operator,
-              value: f.value ?? "",
-            }))
-          : undefined,
-      // ✅ FIX: Just pass the sorts without trying to access infiniteData
-      sorts:
-        sorts.length > 0
-          ? sorts.map((s: SortType) => ({
-              columnId: s.columnId,
-              type: "text" as const, // ✅ Default to text, backend will determine actual type
-              direction: s.direction,
-            }))
-          : undefined,
-    },
-    {
-      enabled: !!tableId,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      placeholderData: (previousData) => previousData,
-    },
-  );
+  } = api.table.getData.useInfiniteQuery(queryKey, {
+    enabled: !!tableId,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+  });
 
   const data = useMemo((): TableDataType | undefined => {
     if (!infiniteData?.pages) return undefined;
@@ -162,71 +160,26 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
-      await utils.table.getData.cancel({ tableId });
+      await utils.table.getData.cancel(queryKey);
 
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-        searchQuery: searchQuery || undefined,
-        filterConjunction: filterConjunction,
-        filters:
-          filters.length > 0
-            ? filters.map((f: FilterCondition) => ({
-                columnId: f.columnId,
-                operator: f.operator,
-                value: f.value ?? "",
-              }))
-            : undefined,
-        sorts:
-          sorts.length > 0
-            ? sorts.map((s: SortType) => ({
-                columnId: s.columnId,
-                type: "text" as const,
-                direction: s.direction,
-              }))
-            : undefined,
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
+
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
+        if (!old) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            cells: page.cells.map((cell) =>
+              cell.rowId === variables.rowId &&
+              cell.columnId === variables.columnId
+                ? { ...cell, textValue: variables.value }
+                : cell,
+            ),
+          })),
+        };
       });
-
-      utils.table.getData.setInfiniteData(
-        {
-          tableId,
-          limit: 5000,
-          searchQuery: searchQuery || undefined,
-          filterConjunction: filterConjunction,
-          filters:
-            filters.length > 0
-              ? filters.map((f: FilterCondition) => ({
-                  columnId: f.columnId,
-                  operator: f.operator,
-                  value: f.value ?? "",
-                }))
-              : undefined,
-          sorts:
-            sorts.length > 0
-              ? sorts.map((s: SortType) => ({
-                  columnId: s.columnId,
-                  type: "text" as const,
-                  direction: s.direction,
-                }))
-              : undefined,
-        },
-        (old) => {
-          if (!old) return old;
-
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              cells: page.cells.map((cell) =>
-                cell.rowId === variables.rowId &&
-                cell.columnId === variables.columnId
-                  ? { ...cell, textValue: variables.value }
-                  : cell,
-              ),
-            })),
-          };
-        },
-      );
 
       return { previousData };
     },
@@ -243,31 +196,7 @@ export default function TableClient() {
     onError: (err, variables, context) => {
       console.log("🔴 Cell update failed, rolling back");
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          {
-            tableId,
-            limit: 5000,
-            searchQuery: searchQuery || undefined,
-            filterConjunction: filterConjunction,
-            filters:
-              filters.length > 0
-                ? filters.map((f: FilterCondition) => ({
-                    columnId: f.columnId,
-                    operator: f.operator,
-                    value: f.value ?? "",
-                  }))
-                : undefined,
-            sorts:
-              sorts.length > 0
-                ? sorts.map((s: SortType) => ({
-                    columnId: s.columnId,
-                    type: "text" as const,
-                    direction: s.direction,
-                  }))
-                : undefined,
-          },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
 
       setPendingUpdates((prev) => {
@@ -680,6 +609,7 @@ export default function TableClient() {
             isLoadingJump.current
           }
           onOpenSearch={() => setSearchBarOpen(true)}
+          queryKey = {queryKey}
         />
       </div>
     </div>
