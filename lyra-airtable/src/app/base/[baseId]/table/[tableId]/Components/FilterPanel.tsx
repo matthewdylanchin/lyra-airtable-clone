@@ -19,6 +19,8 @@ interface FilterPanelProps {
   filters: FilterCondition[];
   onChange: (filters: FilterCondition[]) => void;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  conjunctionMode?: "and" | "or";
+  onConjunctionModeChange?: (mode: "and" | "or") => void;
 }
 
 const TEXT_OPERATORS = [
@@ -48,11 +50,12 @@ export default function FilterPanel({
   filters,
   onChange,
   triggerRef,
+  conjunctionMode = "and",
+  onConjunctionModeChange,
 }: FilterPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
-  const [conjunctionMode, setConjunctionMode] = useState<"and" | "or">("and"); // ✅ Track AND/OR
 
   useEffect(() => {
     setMounted(true);
@@ -178,9 +181,18 @@ export default function FilterPanel({
         {/* Condition Group Header */}
         <div className="mb-2 flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
           <span className="text-sm font-medium text-zinc-700">Where</span>
+          <select
+            value={conjunctionMode}
+            onChange={(e) =>
+              onConjunctionModeChange?.(e.target.value as "and" | "or")
+            }
+            className="rounded border-none bg-transparent px-1 py-0 text-sm text-zinc-600 outline-none hover:bg-zinc-100"
+          >
+            <option value="and">All</option>
+            <option value="or">Any</option>
+          </select>
           <span className="text-sm text-zinc-600">
-            {conjunctionMode === "and" ? "All" : "Any"} of the following are
-            true...
+            of the following are true...
           </span>
           <div className="ml-auto flex gap-1">
             <button className="rounded p-1 hover:bg-zinc-200">
@@ -218,18 +230,11 @@ export default function FilterPanel({
                   key={condition.id}
                   className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
                 >
-                  {/* ✅ AND/OR Dropdown (only show after first condition) */}
+                  {/* ✅ AND/OR Label (only show after first condition) */}
                   {index > 0 && (
-                    <select
-                      value={conjunctionMode}
-                      onChange={(e) =>
-                        setConjunctionMode(e.target.value as "and" | "or")
-                      }
-                      className="rounded border-none bg-transparent px-1 py-0 text-xs font-medium text-zinc-700 outline-none"
-                    >
-                      <option value="and">And</option>
-                      <option value="or">Or</option>
-                    </select>
+                    <span className="text-xs font-medium text-zinc-700">
+                      {conjunctionMode === "and" ? "And" : "Or"}
+                    </span>
                   )}
 
                   {/* ✅ Show "Where" only for first condition */}

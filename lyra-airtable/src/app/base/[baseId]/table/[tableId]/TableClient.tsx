@@ -55,6 +55,11 @@ export default function TableClient() {
 
   const [filters, setFilters] = useState<FilterCondition[]>([]);
 
+  // ✅ FIX: Add filterConjunction state that was missing
+  const [filterConjunction, setFilterConjunction] = useState<"and" | "or">(
+    "and",
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem(
@@ -84,7 +89,9 @@ export default function TableClient() {
     {
       tableId,
       limit: 5000,
-      searchQuery: searchQuery || undefined, // Pass search query to API
+      searchQuery: searchQuery || undefined,
+      // ✅ FIX: Pass filterConjunction to backend
+      filterConjunction: filterConjunction,
       filters:
         filters.length > 0
           ? filters.map((f) => ({
@@ -133,25 +140,51 @@ export default function TableClient() {
       const previousData = utils.table.getData.getInfiniteData({
         tableId,
         limit: 5000,
+        searchQuery: searchQuery || undefined,
+        filterConjunction: filterConjunction,
+        filters:
+          filters.length > 0
+            ? filters.map((f) => ({
+                columnId: f.columnId,
+                operator: f.operator,
+                value: f.value ?? "",
+              }))
+            : undefined,
       });
 
       // Optimistically update cache
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
-        if (!old) return old;
+      utils.table.getData.setInfiniteData(
+        {
+          tableId,
+          limit: 5000,
+          searchQuery: searchQuery || undefined,
+          filterConjunction: filterConjunction,
+          filters:
+            filters.length > 0
+              ? filters.map((f) => ({
+                  columnId: f.columnId,
+                  operator: f.operator,
+                  value: f.value ?? "",
+                }))
+              : undefined,
+        },
+        (old) => {
+          if (!old) return old;
 
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            cells: page.cells.map((cell) =>
-              cell.rowId === variables.rowId &&
-              cell.columnId === variables.columnId
-                ? { ...cell, textValue: variables.value }
-                : cell,
-            ),
-          })),
-        };
-      });
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              cells: page.cells.map((cell) =>
+                cell.rowId === variables.rowId &&
+                cell.columnId === variables.columnId
+                  ? { ...cell, textValue: variables.value }
+                  : cell,
+              ),
+            })),
+          };
+        },
+      );
 
       return { previousData };
     },
@@ -171,7 +204,20 @@ export default function TableClient() {
       // Rollback on error
       if (context?.previousData) {
         utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
+          {
+            tableId,
+            limit: 5000,
+            searchQuery: searchQuery || undefined,
+            filterConjunction: filterConjunction,
+            filters:
+              filters.length > 0
+                ? filters.map((f) => ({
+                    columnId: f.columnId,
+                    operator: f.operator,
+                    value: f.value ?? "",
+                  }))
+                : undefined,
+          },
           context.previousData,
         );
       }
@@ -255,7 +301,7 @@ export default function TableClient() {
     data.rows.forEach((row, rowIndex) => {
       data.columns.forEach((col, colIndex) => {
         const cellKey = `${row.id}:${col.id}`;
-        const cell = cellByKey.get(cellKey); // ✅ Correct
+        const cell = cellByKey.get(cellKey);
         const value = cell?.textValue ?? "";
 
         if (value?.toLowerCase().includes(searchQuery.toLowerCase())) {
@@ -295,13 +341,13 @@ export default function TableClient() {
 
   // ✅ NEW: Scroll to current match
   useEffect(() => {
-    if (!currentMatch || searchBarOpen) return; // ✅ Don't scroll if search is open
+    if (!currentMatch || searchBarOpen) return;
 
     setSelectedCell({
       rowIndex: currentMatch.rowIndex,
       colIndex: currentMatch.colIndex,
     });
-  }, [currentMatch, searchBarOpen]); // ✅ Add searchBarOpen to deps
+  }, [currentMatch, searchBarOpen]);
 
   /* ---------- Columns ---------- */
   const columns = useMemo(
@@ -323,7 +369,7 @@ export default function TableClient() {
           setAddColumnOpen({ insert, position });
         },
         upsert,
-        searchQuery, // ✅ Add this
+        searchQuery,
         currentMatch,
       }),
     [
@@ -335,7 +381,7 @@ export default function TableClient() {
       cancelEdit,
       setDraft,
       upsert,
-      searchQuery, // ✅ Add to dependency array
+      searchQuery,
       currentMatch,
     ],
   );
@@ -510,7 +556,7 @@ export default function TableClient() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [setSearchBarOpen]);
 
   /* ---------- Loading / error ---------- */
   if (isLoading) {
@@ -569,7 +615,9 @@ export default function TableClient() {
         columns={data?.columns ?? []}
         filters={filters}
         onChange={setFilters}
-        triggerRef={filterButtonRef ?? undefined} // ✅ Now from context
+        triggerRef={filterButtonRef ?? undefined}
+        conjunctionMode={filterConjunction}
+        onConjunctionModeChange={setFilterConjunction}
       />
 
       <div className="min-h-0 flex-1">

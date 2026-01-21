@@ -180,7 +180,7 @@ export const tableRouter = createTRPCRouter({
         limit: z.number().int().min(1).max(10000).default(5000),
         cursor: z.number().int().optional(),
         searchQuery: z.string().optional(),
-        // ✅ Remove 'type' requirement - backend will determine it
+        filterConjunction: z.enum(["and", "or"]).optional(),
         filters: z
           .array(
             z.object({
@@ -222,12 +222,12 @@ export const tableRouter = createTRPCRouter({
 
       let filteredRowIds: string[] | null = null;
 
-      // ✅ Enhanced filtering - determine type from columns
+      // ✅ Enhanced filtering with OR/AND logic
       if (filters?.length) {
         const cellFilterPromises = filters.map(async (filter) => {
           const base: any = { columnId: filter.columnId };
 
-          // ✅ Find the column to determine type
+          // Find the column to determine type
           const column = columns.find((c) => c.id === filter.columnId);
           const isNumberColumn = column?.type === "NUMBER";
 
@@ -305,12 +305,23 @@ export const tableRouter = createTRPCRouter({
 
         const rowIdSets = await Promise.all(cellFilterPromises);
 
+        // ✅ FIXED: Apply OR/AND logic correctly (removed duplicate code)
         if (rowIdSets.length > 0) {
-          filteredRowIds = Array.from(rowIdSets[0]!);
-
-          for (let i = 1; i < rowIdSets.length; i++) {
-            const currentSet = rowIdSets[i]!;
-            filteredRowIds = filteredRowIds.filter((id) => currentSet.has(id));
+          if (input.filterConjunction === "or") {
+            // OR logic: union of all sets
+            const allRowIds = new Set<string>();
+            rowIdSets.forEach((set) => {
+              set.forEach((id) => allRowIds.add(id));
+            });
+            filteredRowIds = Array.from(allRowIds);
+          } else {
+            // AND logic: intersection of all sets (default)
+            filteredRowIds = Array.from(rowIdSets[0]!);
+            for (let i = 1; i < rowIdSets.length; i++) {
+              filteredRowIds = filteredRowIds.filter((id) =>
+                rowIdSets[i]!.has(id),
+              );
+            }
           }
         }
       }
