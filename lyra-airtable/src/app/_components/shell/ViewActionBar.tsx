@@ -42,7 +42,7 @@ export default function ViewActionBar() {
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
     setFilterButtonRef(filterButtonRef);
-    setSearchButtonRef(sortButtonRef);
+    setSortButtonRef(sortButtonRef);
   }, [setSearchButtonRef, setFilterButtonRef, setSearchButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({

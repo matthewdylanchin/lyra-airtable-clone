@@ -389,6 +389,10 @@ export default function TableClient() {
     return new Set(filters.map((f) => f.columnId));
   }, [filters]);
 
+  const sortedColumnIds = useMemo(() => {
+    return new Set(sorts.map((s) => s.columnId));
+  }, [sorts]);
+
   const columns = useMemo(
     () =>
       createColumns({
@@ -411,6 +415,7 @@ export default function TableClient() {
         searchQuery,
         currentMatch,
         filteredColumnIds,
+        sortedColumnIds,
       }),
     [
       data,
@@ -424,6 +429,7 @@ export default function TableClient() {
       searchQuery,
       currentMatch,
       filteredColumnIds,
+      sortedColumnIds,
     ],
   );
 
@@ -650,6 +656,15 @@ export default function TableClient() {
         onConjunctionModeChange={setFilterConjunction}
       />
 
+      <SortPanel
+        isOpen={sortPanelOpen}
+        onClose={() => setSortPanelOpen(false)}
+        columns={data?.columns ?? []}
+        sorts={sorts}
+        onChange={setSorts}
+        triggerRef={sortButtonRef ?? undefined}
+      />
+
       <div className="min-h-0 flex-1">
         <TableView
           table={table}
@@ -665,15 +680,6 @@ export default function TableClient() {
             isLoadingJump.current
           }
           onOpenSearch={() => setSearchBarOpen(true)}
-        />
-
-        <SortPanel
-          isOpen={sortPanelOpen}
-          onClose={() => setSortPanelOpen(false)}
-          columns={data?.columns ?? []}
-          sorts={sorts}
-          onChange={setSorts}
-          triggerRef={sortButtonRef ?? undefined}
         />
       </div>
     </div>

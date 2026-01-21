@@ -89,7 +89,8 @@ export function createColumns({
   upsert,
   searchQuery,
   currentMatch,
-  filteredColumnIds, // ✅ NEW: Add this parameter for green highlighting
+  filteredColumnIds,
+  sortedColumnIds,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -116,7 +117,8 @@ export function createColumns({
     rowIndex: number;
     colIndex: number;
   } | null;
-  filteredColumnIds?: Set<string>; // ✅ NEW: Type for filtered columns
+  filteredColumnIds?: Set<string>;
+  sortedColumnIds?: Set<string>;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -158,8 +160,9 @@ export function createColumns({
     },
 
     ...data.columns.map((c) => {
-      // ✅ NEW: Check if this column is filtered
+      // Check if this column is filtered or sorted
       const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
+      const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
 
       return {
         id: c.id,
@@ -220,9 +223,12 @@ export function createColumns({
                 "relative flex h-9 w-full cursor-default items-center outline-none",
                 isSelected && "ring-2 ring-blue-600 ring-inset",
                 !isEditing && "hover:bg-zinc-50",
-                // ✅ NEW: Green background for filtered columns (lowest priority)
+                // Column highlighting priority: filter (green) > sort (orange)
+                // If filtered, use green regardless of sort state
                 isFilteredColumn && "bg-emerald-50",
-                // Search highlighting (higher priority than green)
+                // If sorted but NOT filtered, use orange
+                isSortedColumn && !isFilteredColumn && "bg-orange-50",
+                // Search highlighting (highest priority)
                 isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
                 isMatch &&
                   !isCurrentMatch &&
