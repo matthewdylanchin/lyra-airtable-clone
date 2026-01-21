@@ -55,14 +55,28 @@ export function useKeyboardNavigation({
           rowIndex = Math.max(rowIndex - 1, 0);
           break;
         case "ArrowRight":
-        case "Tab":
-          if (e.shiftKey && e.key === "Tab") {
-            // Shift+Tab goes left
-            colIndex = Math.max(colIndex - 1, 1);
+        case "Tab": {
+          e.preventDefault();
+
+          if (e.shiftKey) {
+            // ⬅ Shift + Tab
+            if (colIndex > 1) {
+              colIndex -= 1;
+            } else if (rowIndex > 0) {
+              rowIndex -= 1;
+              colIndex = cols.length - 1;
+            }
           } else {
-            colIndex = Math.min(colIndex + 1, cols.length - 1);
+            // ➡ Tab
+            if (colIndex < cols.length - 1) {
+              colIndex += 1;
+            } else if (rowIndex < rows.length - 1) {
+              rowIndex += 1;
+              colIndex = 1;
+            }
           }
           break;
+        }
         case "ArrowLeft":
           colIndex = Math.max(colIndex - 1, 1);
           break;
