@@ -362,8 +362,30 @@ export const tableRouter = createTRPCRouter({
             columnId: firstSort.columnId,
             ...(filteredRowIds ? { rowId: { in: filteredRowIds } } : {}),
           },
-          orderBy,
-          select: { rowId: true },
+          select: {
+            rowId: true,
+            textValue: true,
+            numberValue: true,
+          },
+        });
+
+        // ✅ Sort in memory with case-insensitive comparison
+        sortedCells.sort((a, b) => {
+          if (column.type === "NUMBER") {
+            const aVal = a.numberValue ?? -Infinity;
+            const bVal = b.numberValue ?? -Infinity;
+            return firstSort.direction === "asc" ? aVal - bVal : bVal - aVal;
+          } else {
+            // ✅ Case-insensitive text comparison
+            const aVal = (a.textValue ?? "").toLowerCase();
+            const bVal = (b.textValue ?? "").toLowerCase();
+
+            if (firstSort.direction === "asc") {
+              return aVal.localeCompare(bVal);
+            } else {
+              return bVal.localeCompare(aVal);
+            }
+          }
         });
 
         sortedRowIds = sortedCells.map((c) => c.rowId);

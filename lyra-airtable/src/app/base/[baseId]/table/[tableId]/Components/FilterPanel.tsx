@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Sparkles } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import type { FilterCondition } from "../types";
+import CustomDropdown from "./CustomDropdown";
 
 interface Column {
   id: string;
@@ -57,20 +58,17 @@ export default function FilterPanel({
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => setMounted(true), []);
 
-  // Calculate position - align to RIGHT of button
   useEffect(() => {
     if (!isOpen || !triggerRef?.current) return;
 
     const updatePosition = () => {
-      const buttonRect = triggerRef.current?.getBoundingClientRect();
-      if (buttonRect) {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) {
         setPosition({
-          top: buttonRect.bottom + 8,
-          left: buttonRect.right - 680,
+          top: rect.bottom + 8,
+          left: rect.right - 680,
         });
       }
     };
@@ -85,7 +83,6 @@ export default function FilterPanel({
     };
   }, [isOpen, triggerRef]);
 
-  // Click outside to close
   useEffect(() => {
     if (!isOpen) return;
 
@@ -133,9 +130,8 @@ export default function FilterPanel({
     return column?.type === "NUMBER" ? NUMBER_OPERATORS : TEXT_OPERATORS;
   };
 
-  const needsValueInput = (operator: string) => {
-    return !["empty", "not_empty"].includes(operator);
-  };
+  const needsValueInput = (operator: string) =>
+    !["empty", "not_empty"].includes(operator);
 
   if (!isOpen || !mounted) return null;
 
@@ -143,144 +139,109 @@ export default function FilterPanel({
     <div
       ref={panelRef}
       className="fixed z-[9999] w-[680px] rounded-lg border border-zinc-200 bg-white shadow-xl"
-      style={{
-        top: `${position.top}px`,
-        left: `${position.left}px`,
-      }}
+      style={{ top: position.top, left: position.left }}
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-zinc-900">Filter</h3>
-        <button
-          onClick={onClose}
-          className="rounded p-1 hover:bg-zinc-100"
-          aria-label="Close"
-        >
-          <X size={16} className="text-zinc-500" />
+        <button onClick={onClose} className="rounded p-1 hover:bg-zinc-100">
+          <X size={16} />
         </button>
       </div>
 
       {/* AI Prompt */}
       <div className="border-b border-zinc-200 px-4 py-3">
-        <div className="flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-2 hover:border-zinc-400">
+        <div className="flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-2">
           <Sparkles size={16} className="text-purple-500" />
           <input
-            type="text"
+            className="flex-1 text-sm outline-none"
             placeholder="Describe what you want to see"
-            className="flex-1 text-sm text-zinc-900 placeholder-zinc-400 outline-none"
           />
         </div>
       </div>
 
-      {/* Conditions */}
+      {/* Filters */}
       <div className="px-4 py-3">
         <div className="mb-3 text-xs font-medium text-zinc-600">
           In this view, show records
         </div>
 
-        {/* Filter Conditions */}
         <div className="space-y-2">
           {filters.length === 0 ? (
-            <div className="rounded-md border border-dashed border-zinc-300 px-4 py-8 text-center">
-              <p className="text-sm text-zinc-500">No filters applied</p>
+            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-zinc-500">
+              No filters applied
             </div>
           ) : (
             filters.map((condition, index) => {
-              const operators = getOperatorsForColumn(condition.columnId);
-              const showValueInput = needsValueInput(condition.operator);
+              const operators = getOperatorsForColumn(condition.columnId).map(
+                (op) => ({
+                  value: op.value,
+                  label: op.label,
+                }),
+              );
 
               return (
                 <div
                   key={condition.id}
-                  className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
+                  className="flex items-center gap-2 rounded-md border-zinc-200 px-3 py-2"
                 >
-                  {/* ✅ First condition: "Where" */}
-                  {/* ✅ Second condition: AND/OR dropdown (editable) */}
-                  {/* ✅ Rest: Show label matching current mode (not editable) */}
                   {index === 0 ? (
-                    <span className="text-xs font-medium text-zinc-700">
-                      Where
-                    </span>
+                    <span className="text-xs font-medium">Where</span>
                   ) : index === 1 ? (
-                    <select
+                    <CustomDropdown
                       value={conjunctionMode}
-                      onChange={(e) =>
-                        onConjunctionModeChange?.(
-                          e.target.value as "and" | "or",
-                        )
+                      options={[
+                        { value: "and", label: "And" },
+                        { value: "or", label: "Or" },
+                      ]}
+                      onChange={(v) =>
+                        onConjunctionModeChange?.(v as "and" | "or")
                       }
-                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 outline-none hover:border-zinc-400"
-                    >
-                      <option value="and">And</option>
-                      <option value="or">Or</option>
-                    </select>
+                      className="w-[80px]"
+                    />
                   ) : (
-                    <span className="text-xs font-medium text-zinc-700">
+                    <span className="text-xs font-medium">
                       {conjunctionMode === "and" ? "And" : "Or"}
                     </span>
                   )}
 
-                  {/* Column Select */}
-                  <select
+                  <CustomDropdown
                     value={condition.columnId}
-                    onChange={(e) =>
-                      updateCondition(condition.id, "columnId", e.target.value)
+                    options={columns.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    }))}
+                    onChange={(v) =>
+                      updateCondition(condition.id, "columnId", v)
                     }
-                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-400"
-                  >
-                    {columns.map((col) => (
-                      <option key={col.id} value={col.id}>
-                        {col.name}
-                      </option>
-                    ))}
-                  </select>
+                    className="w-[160px]"
+                  />
 
-                  {/* Operator Select */}
-                  <select
+                  <CustomDropdown
                     value={condition.operator}
-                    onChange={(e) =>
-                      updateCondition(condition.id, "operator", e.target.value)
+                    options={operators}
+                    onChange={(v) =>
+                      updateCondition(condition.id, "operator", v)
                     }
-                    className="rounded border-none bg-transparent px-2 py-1 text-sm text-zinc-600 outline-none"
-                  >
-                    {operators.map((op) => (
-                      <option key={op.value} value={op.value}>
-                        {op.label}
-                      </option>
-                    ))}
-                  </select>
+                    className="w-[140px]"
+                  />
 
-                  {/* Value Input */}
-                  {showValueInput && (
+                  {needsValueInput(condition.operator) && (
                     <input
-                      type="text"
                       value={condition.value ?? ""}
                       onChange={(e) =>
                         updateCondition(condition.id, "value", e.target.value)
                       }
+                      className="flex-1 rounded border border-zinc-200 px-2 py-1 text-sm"
                       placeholder="Enter a value"
-                      className="flex-1 rounded border border-zinc-300 px-2 py-1 text-sm outline-none hover:border-zinc-400"
                     />
                   )}
 
-                  {/* Delete Button */}
                   <button
                     onClick={() => removeCondition(condition.id)}
                     className="rounded p-1 hover:bg-zinc-100"
                   >
-                    <Trash2 size={14} className="text-zinc-500" />
-                  </button>
-
-                  {/* Drag Handle */}
-                  <button className="cursor-grab rounded p-1 hover:bg-zinc-100">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    <Trash2 size={14} />
                   </button>
                 </div>
               );
@@ -288,16 +249,13 @@ export default function FilterPanel({
           )}
         </div>
 
-        {/* Add Condition Button */}
-        <div className="mt-3 flex gap-3 text-sm">
-          <button
-            onClick={addCondition}
-            className="flex items-center gap-1 text-zinc-600 hover:text-zinc-900"
-          >
-            <Plus size={14} />
-            Add condition
-          </button>
-        </div>
+        <button
+          onClick={addCondition}
+          className="mt-3 flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+        >
+          <Plus size={14} />
+          Add condition
+        </button>
       </div>
     </div>
   );
