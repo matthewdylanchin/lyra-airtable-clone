@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState } from "react";
+import type { FilterCondition } from "./types";
+
+// ✅ Add SortCondition type
+export type SortCondition = {
+  id: string;
+  columnId: string;
+  direction: "asc" | "desc";
+};
 
 type TableViewContextType = {
   searchBarOpen: boolean;
@@ -8,16 +16,52 @@ type TableViewContextType = {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   searchButtonRef: React.RefObject<HTMLButtonElement | null> | null;
-  setSearchButtonRef: (ref: React.RefObject<HTMLButtonElement | null>) => void;
+  setSearchButtonRef: React.Dispatch<
+    React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
+  >;
+
+  filterPanelOpen: boolean;
+  setFilterPanelOpen: (open: boolean) => void;
+  filterButtonRef: React.RefObject<HTMLButtonElement | null> | null;
+  setFilterButtonRef: React.Dispatch<
+    React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
+  >;
+
+  filters: FilterCondition[];
+  setFilters: (filters: FilterCondition[]) => void;
+  filterConjunction: "and" | "or";
+  setFilterConjunction: (mode: "and" | "or") => void;
+  // ✅ Add sort state
+  sortPanelOpen: boolean;
+  setSortPanelOpen: (open: boolean) => void;
+  sortButtonRef: React.RefObject<HTMLButtonElement | null> | null;
+  setSortButtonRef: React.Dispatch<
+    React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
+  >;
+  sorts: SortCondition[];
+  setSorts: (sorts: SortCondition[]) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
 
-export function TableViewProvider({ children }: { children: ReactNode }) {
+export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const [searchBarOpen, setSearchBarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchButtonRef, setSearchButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [filterButtonRef, setFilterButtonRef] =
+    useState<React.RefObject<HTMLButtonElement | null> | null>(null);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [filterConjunction, setFilterConjunction] = useState<"and" | "or">(
+    "and",
+  );
+
+  // ✅ Add sort state
+  const [sortPanelOpen, setSortPanelOpen] = useState(false);
+  const [sortButtonRef, setSortButtonRef] =
+    useState<React.RefObject<HTMLButtonElement | null> | null>(null);
+  const [sorts, setSorts] = useState<SortCondition[]>([]);
 
   return (
     <TableViewContext.Provider
@@ -28,6 +72,20 @@ export function TableViewProvider({ children }: { children: ReactNode }) {
         setSearchQuery,
         searchButtonRef,
         setSearchButtonRef,
+        filterPanelOpen,
+        setFilterPanelOpen,
+        filterButtonRef,
+        setFilterButtonRef,
+        filters,
+        setFilters,
+        filterConjunction,
+        setFilterConjunction,
+        sortPanelOpen,
+        setSortPanelOpen,
+        sortButtonRef,
+        setSortButtonRef,
+        sorts,
+        setSorts,
       }}
     >
       {children}

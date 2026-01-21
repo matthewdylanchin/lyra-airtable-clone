@@ -87,8 +87,10 @@ export function createColumns({
   setDraft,
   onInsert,
   upsert,
-  searchQuery, // ✅ Add this parameter
+  searchQuery,
   currentMatch,
+  filteredColumnIds,
+  sortedColumnIds,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -108,13 +110,15 @@ export function createColumns({
     position: { top: number; left: number },
   ) => void;
   upsert: CellUpsertMutation;
-  searchQuery?: string; // ✅ Add this type
+  searchQuery?: string;
   currentMatch?: {
     rowId: string;
     columnId: string;
     rowIndex: number;
     colIndex: number;
-  } | null; // ✅ Add this type
+  } | null;
+  filteredColumnIds?: Set<string>;
+  sortedColumnIds?: Set<string>;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -125,7 +129,7 @@ export function createColumns({
       size: 60,
       minSize: 50,
       cell: (info) => {
-        // ✅ Check if this row has any matching cells
+        // Check if this row has any matching cells
         const hasMatch =
           searchQuery &&
           data.columns.some((col) => {
@@ -145,7 +149,7 @@ export function createColumns({
               hasMatch && "bg-amber-100 font-semibold",
             )}
             style={{
-              height: "35px", // ✅ Match your row height explicitly
+              height: "35px",
               width: "100%",
             }}
           >
@@ -155,123 +159,135 @@ export function createColumns({
       },
     },
 
-    ...data.columns.map((c) => ({
-      id: c.id,
-      accessorFn: (row: TableRow) => row[c.id] ?? null,
-      size: getColumnWidth(c.name, c.type),
-      minSize: 50,
+    ...data.columns.map((c) => {
+      // Check if this column is filtered or sorted
+      const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
+      const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
 
-      meta: {
+      return {
         id: c.id,
-        name: c.name,
-        type: c.type,
-      },
+        accessorFn: (row: TableRow) => row[c.id] ?? null,
+        size: getColumnWidth(c.name, c.type),
+        minSize: 50,
 
-      header: () => (
-        <ColumnHeader
-          column={{ id: c.id, name: c.name, type: c.type }}
-          tableId={data.table.id}
-          onInsert={onInsert}
-        />
-      ),
-      cell: (info: CellContext<TableRow, CellValue>) => {
-        const value = info.getValue();
-        const rowId = info.row.original.__rowId;
-        const rowIndex = info.row.index;
-        const colIndex = info.column.getIndex();
+        meta: {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+        },
 
-        const isSelected =
-          selectedCell?.rowIndex === rowIndex &&
-          selectedCell?.colIndex === colIndex;
+        header: () => (
+          <ColumnHeader
+            column={{ id: c.id, name: c.name, type: c.type }}
+            tableId={data.table.id}
+            onInsert={onInsert}
+          />
+        ),
+        cell: (info: CellContext<TableRow, CellValue>) => {
+          const value = info.getValue();
+          const rowId = info.row.original.__rowId;
+          const rowIndex = info.row.index;
+          const colIndex = info.column.getIndex();
 
-        const isEditing =
-          editing?.rowId === rowId && editing?.columnId === c.id;
+          const isSelected =
+            selectedCell?.rowIndex === rowIndex &&
+            selectedCell?.colIndex === colIndex;
 
-        const isNumberCol = c.type === "NUMBER";
+          const isEditing =
+            editing?.rowId === rowId && editing?.columnId === c.id;
 
-        const isPending =
-          upsert.isPending &&
-          upsert.variables?.rowId === rowId &&
-          upsert.variables?.columnId === c.id;
+          const isNumberCol = c.type === "NUMBER";
 
-        // ✅ Check if this cell matches the search query
-        const cellValueStr = value != null ? String(value) : "";
-        const searchLower = searchQuery?.toLowerCase() ?? "";
-        const cellLower = cellValueStr.toLowerCase();
+          const isPending =
+            upsert.isPending &&
+            upsert.variables?.rowId === rowId &&
+            upsert.variables?.columnId === c.id;
 
-        const isMatch =
-          searchQuery && cellValueStr && cellLower.includes(searchLower);
+          // Check if this cell matches the search query
+          const cellValueStr = value != null ? String(value) : "";
+          const searchLower = searchQuery?.toLowerCase() ?? "";
+          const cellLower = cellValueStr.toLowerCase();
 
-        // ✅ Check if this is the CURRENT focused match (dark amber)
-        const isCurrentMatch =
-          isMatch &&
-          currentMatch?.rowId === rowId &&
-          currentMatch?.columnId === c.id;
+          const isMatch =
+            searchQuery && cellValueStr && cellLower.includes(searchLower);
 
-        return (
-          <div
-            className={cn(
-              "relative flex h-9 w-full cursor-default items-center outline-none",
-              isSelected && "ring-2 ring-blue-600 ring-inset",
-              !isEditing && "hover:bg-zinc-50",
-              isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200", // ✅ Dark amber for focused match
-              isMatch &&
-                !isCurrentMatch &&
-                "border-l-2 border-amber-100 bg-amber-100", // ✅ Light amber for other matches
-            )}
-            onClick={() => setSelectedCell({ rowIndex, colIndex })}
-            onDoubleClick={() => startEdit(rowId, c.id, "append")}
-          >
-            {isEditing ? (
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => {
-                  const val = e.target.value;
+          // Check if this is the CURRENT focused match (dark amber)
+          const isCurrentMatch =
+            isMatch &&
+            currentMatch?.rowId === rowId &&
+            currentMatch?.columnId === c.id;
 
-                  if (isNumberCol) {
-                    if (/^-?\d*\.?\d*$/.test(val)) {
-                      setDraft(val);
+          return (
+            <div
+              className={cn(
+                "relative flex h-9 w-full cursor-default items-center outline-none",
+                isSelected && "ring-2 ring-blue-600 ring-inset",
+                !isEditing && "hover:bg-zinc-50",
+                // Column highlighting priority: filter (green) > sort (orange)
+                // If filtered, use green regardless of sort state
+                isFilteredColumn && "bg-emerald-50",
+                // If sorted but NOT filtered, use orange
+                isSortedColumn && !isFilteredColumn && "bg-orange-50",
+                // Search highlighting (highest priority)
+                isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
+                isMatch &&
+                  !isCurrentMatch &&
+                  "border-l-2 border-amber-100 bg-amber-100",
+              )}
+              onClick={() => setSelectedCell({ rowIndex, colIndex })}
+              onDoubleClick={() => startEdit(rowId, c.id, "append")}
+            >
+              {isEditing ? (
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => {
+                    const val = e.target.value;
+
+                    if (isNumberCol) {
+                      if (/^-?\d*\.?\d*$/.test(val)) {
+                        setDraft(val);
+                      }
+                      return;
                     }
-                    return;
-                  }
 
-                  setDraft(val);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.stopPropagation();
+                    setDraft(val);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      commitEdit();
+                      return;
+                    }
+
+                    if (e.key === "Tab") {
+                      e.preventDefault();
+                      commitEdit();
+                      return;
+                    }
+
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelEdit();
+                      return;
+                    }
+                  }}
+                  onBlur={() => {
                     commitEdit();
-                    return;
-                  }
-
-                  if (e.key === "Tab") {
-                    e.preventDefault();
-                    commitEdit();
-                    return;
-                  }
-
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelEdit();
-                    return;
-                  }
-                }}
-                onBlur={() => {
-                  commitEdit();
-                }}
-                className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
-                style={{ boxShadow: "none" }}
-              />
-            ) : (
-              <span className="block truncate px-2.5 text-sm">
-                {String(value ?? "")}
-              </span>
-            )}
-          </div>
-        );
-      },
-    })),
+                  }}
+                  className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+                  style={{ boxShadow: "none" }}
+                />
+              ) : (
+                <span className="block truncate px-2.5 text-sm">
+                  {String(value ?? "")}
+                </span>
+              )}
+            </div>
+          );
+        },
+      };
+    }),
   ];
 }

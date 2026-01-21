@@ -30,7 +30,7 @@ import {
   TextInitial,
   CircleArrowDown,
 } from "lucide-react";
-import type { ColumnInsertPosition } from "../types";
+import type { ColumnInsertPosition, FilterCondition, SortType } from "../types";
 
 // Field agents (AI features) with colors
 const fieldAgents = [
@@ -155,6 +155,8 @@ export default function AddColumnButton({
   autoOpen = false,
   targetColumnRef,
   initialPosition,
+  queryKey,
+  className,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
@@ -162,6 +164,23 @@ export default function AddColumnButton({
   autoOpen?: boolean;
   targetColumnRef?: React.RefObject<HTMLElement | null>;
   initialPosition?: { top: number; left: number };
+  queryKey: {
+    tableId: string;
+    limit: number;
+    searchQuery?: string;
+    filterConjunction?: "and" | "or";
+    filters?: {
+      columnId: string;
+      operator: string;
+      value: string;
+    }[];
+    sorts?: {
+      columnId: string;
+      direction: "asc" | "desc";
+      type?: "text" | "number";
+    }[];
+  };
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -189,16 +208,13 @@ export default function AddColumnButton({
   const createColumn = api.column.create.useMutation({
     onMutate: async (variables) => {
       // Cancel outgoing refetches
-      await utils.table.getData.cancel({ tableId });
+      await utils.table.getData.cancel(queryKey);
 
       // Snapshot previous data
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // ✨ Optimistically add column to cache
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         const tempColumnId = `temp-col-${Date.now()}`;
@@ -239,17 +255,14 @@ export default function AddColumnButton({
     onSuccess: async () => {
       console.log("✅ Column created successfully");
       // Refetch to get real IDs and correct order
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
     },
 
     onError: (error, variables, context) => {
       console.error("Create column error:", error);
       // Rollback on error
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
     },
   });
@@ -257,14 +270,11 @@ export default function AddColumnButton({
   // ⚡ OPTIMISTIC: Insert column at position
   const insertColumn = api.column.insertAtPosition.useMutation({
     onMutate: async (variables) => {
-      await utils.table.getData.cancel({ tableId });
-      const previousData = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
-      });
+      await utils.table.getData.cancel(queryKey);
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       // ✨ Optimistically insert column
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
         const tempColumnId = `temp-col-${Date.now()}`;
@@ -279,6 +289,14 @@ export default function AddColumnButton({
         const newOrder =
           variables.position === "before" ? anchorOrder : anchorOrder + 1;
 
+        // 🔥 SHIFT EXISTING COLUMNS
+        const shiftedColumns = existingColumns.map((col) => {
+          if (col.order >= newOrder) {
+            return { ...col, order: col.order + 1 };
+          }
+          return col;
+        });
+
         const newColumn = {
           id: tempColumnId,
           name: variables.name,
@@ -290,7 +308,9 @@ export default function AddColumnButton({
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            columns: [...page.columns, newColumn],
+            columns: [...shiftedColumns, newColumn].sort(
+              (a, b) => a.order - b.order,
+            ),
             cells: [
               ...page.cells,
               ...page.rows.map((row) => ({
@@ -311,16 +331,13 @@ export default function AddColumnButton({
 
     onSuccess: async () => {
       console.log("✅ Column inserted successfully");
-      await utils.table.getData.invalidate({ tableId });
+      await utils.table.getData.invalidate(queryKey);
     },
 
     onError: (error, variables, context) => {
       console.error("Insert column error:", error);
       if (context?.previousData) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          context.previousData,
-        );
+        utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
     },
   });
@@ -369,21 +386,21 @@ export default function AddColumnButton({
 
       // ✅ Smart horizontal positioning - flip to left if would be cut off on right
       if (left + menuWidth > window.innerWidth - padding) {
-        // Position to the left of the trigger instead
-        if (initialPosition) {
-          // For form, align right edge with trigger
-          left = initialPosition.left - menuWidth + 40; // 40px is approximate button width
-        } else {
-          const refToUse = targetColumnRef?.current ?? buttonRef.current;
-          if (refToUse) {
-            const rect = refToUse.getBoundingClientRect();
-            left = rect.right - menuWidth;
-          }
-        }
+        const refToUse = targetColumnRef?.current ?? buttonRef.current;
+        if (!refToUse) return;
+
+        const rect = refToUse.getBoundingClientRect();
+
+        // Anchor menu to the RIGHT edge of the button
+        left = rect.right - menuWidth;
       }
 
       // Ensure menu doesn't go off left edge
-      left = Math.max(padding, left);
+      // Clamp horizontally so it never overflows viewport
+      left = Math.min(
+        Math.max(padding, left),
+        window.innerWidth - menuWidth - padding,
+      );
 
       // Adjust if menu would go off bottom
       if (top + menuHeight > window.innerHeight - padding) {
@@ -706,7 +723,7 @@ export default function AddColumnButton({
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-zinc-100"
+        className={`flex h-full w-full items-center justify-center transition-colors hover:bg-zinc-100 ${className ?? ""} `}
       >
         <Plus size={16} />
       </button>

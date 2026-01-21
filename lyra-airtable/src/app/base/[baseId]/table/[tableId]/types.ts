@@ -50,3 +50,64 @@ export type AddColumnState = {
   insert: ColumnInsertPosition;
   position: { top: number; left: number }; // Position below chevron
 } | null;
+
+export type FilterOperator =
+  // Text operators
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "not_equals"
+  | "empty"
+  | "not_empty"
+  // Number operators
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte";
+
+export interface FilterCondition {
+  id: string;
+  columnId: string;
+  operator: FilterOperator; // ✅ Specific type
+  value?: string;
+}
+
+export type FilterGroup = {
+  id: string;
+  type: "group";
+  conjunction: "and" | "or";
+  conditions: Array<FilterCondition | FilterGroup>; // ✅ Recursive: can contain conditions or more groups
+};
+
+export type FilterConfig = {
+  rootConjunction: "and" | "or";
+  conditions: Array<FilterCondition | FilterGroup>;
+};
+
+// Helper to check if something is a group
+export function isFilterGroup(
+  item: FilterCondition | FilterGroup,
+): item is FilterGroup {
+  return (item as FilterGroup).type === "group";
+}
+
+// Helper to get all column IDs that are filtered (for badges)
+export function getFilteredColumnIds(
+  conditions: Array<FilterCondition | FilterGroup>,
+): Set<string> {
+  const columnIds = new Set<string>();
+
+  conditions.forEach((item) => {
+    if (isFilterGroup(item)) {
+      // Recursively get column IDs from nested groups
+      const nestedIds = getFilteredColumnIds(item.conditions);
+      nestedIds.forEach((id) => columnIds.add(id));
+    } else {
+      columnIds.add(item.columnId);
+    }
+  });
+
+  return columnIds;
+}
+
+export type SortType = { id: string; columnId: string; direction: "asc" | "desc" };

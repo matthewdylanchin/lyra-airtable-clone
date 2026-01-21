@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Sheet,
   Menu,
+  ListFilter,
 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
@@ -21,13 +22,28 @@ import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewConte
 export default function ViewActionBar() {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
-  const { setSearchBarOpen, setSearchButtonRef } = useTableView();
-  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const {
+    setSearchBarOpen,
+    setSearchButtonRef,
+    setFilterPanelOpen,
+    setFilterButtonRef,
+    filters,
+    setFilters,
+    setSortPanelOpen,
+    setSortButtonRef,
+    sorts,
+    setSorts,
+  } = useTableView();
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sortButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Set the ref in context when component mounts
+  // Set the refs in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
-  }, [setSearchButtonRef]);
+    setFilterButtonRef(filterButtonRef);
+    setSortButtonRef(sortButtonRef);
+  }, [setSearchButtonRef, setFilterButtonRef, setSortButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
     onSuccess: () => {
@@ -39,6 +55,52 @@ export default function ViewActionBar() {
     if (seedRows.isPending) return;
     if (!confirm("Add 100,000 fake rows to this table?")) return;
     seedRows.mutate({ tableId, count: 100_000 });
+  };
+
+  const { data } = api.table.getData.useInfiniteQuery(
+    {
+      tableId,
+      limit: 1,
+    },
+    {
+      enabled: !!tableId,
+      staleTime: Infinity,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
+
+  // Get unique filtered column names
+  const filteredColumnNames = filters
+    .map((f) => {
+      const column = data?.pages[0]?.columns.find((c) => c.id === f.columnId);
+      return column?.name;
+    })
+    .filter(Boolean)
+    .filter((name, index, self) => self.indexOf(name) === index);
+
+  // Get unique sorted column names
+  const sortedColumnNames = sorts
+    .map((s) => {
+      const column = data?.pages[0]?.columns.find((c) => c.id === s.columnId);
+      return column?.name;
+    })
+    .filter(Boolean)
+    .filter((name, index, self) => self.indexOf(name) === index);
+
+  // Generate filter button text
+  const getFilterButtonText = () => {
+    if (filters.length === 0) return "Filter";
+    if (filteredColumnNames.length === 1) {
+      return `Filtered by ${filteredColumnNames[0]}`;
+    }
+    const otherCount = filteredColumnNames.length - 1;
+    return `Filtered by ${filteredColumnNames[0]} and ${otherCount} other field${otherCount > 1 ? "s" : ""}`;
+  };
+
+  // Generate sort button text
+  const getSortButtonText = () => {
+    if (sorts.length === 0) return "Sort";
+    return `Sorted by ${sorts.length} field${sorts.length > 1 ? "s" : ""}`;
   };
 
   return (
@@ -70,16 +132,50 @@ export default function ViewActionBar() {
             <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
           </button>
 
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
-            <Filter className="h-4 w-4 text-zinc-500" /> Filter
+          {/* Filter button with dynamic text */}
+          <button
+            ref={filterButtonRef}
+            onClick={() => setFilterPanelOpen(true)}
+            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
+              filters.length > 0 ? "bg-emerald-100 text-zinc-700" : ""
+            }`}
+          >
+            <ListFilter className="h-4 w-4" />
+            {getFilterButtonText()}
+            {filters.length > 0 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFilters([]);
+                }}
+                className="cursor-pointer rounded hover:bg-emerald-100"
+              ></span>
+            )}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <Layers className="h-4 w-4 text-zinc-500" /> Group
           </button>
 
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
-            <ArrowDownUp className="h-4 w-4 text-zinc-500" /> Sort
+          {/* Sort button with dynamic text */}
+          <button
+            ref={sortButtonRef}
+            onClick={() => setSortPanelOpen(true)}
+            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
+              sorts.length > 0 ? "bg-orange-100 text-zinc-700" : ""
+            }`}
+          >
+            <ArrowDownUp className="h-4 w-4" />
+            {getSortButtonText()}
+            {sorts.length > 0 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSorts([]);
+                }}
+                className="cursor-pointer rounded hover:bg-orange-100"
+              ></span>
+            )}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
