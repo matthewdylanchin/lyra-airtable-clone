@@ -42,8 +42,16 @@ export function TableView({
     limit: number;
     searchQuery?: string;
     filterConjunction?: "and" | "or";
-    filters?: any[];
-    sorts?: any[];
+    filters?: {
+      columnId: string;
+      operator: string;
+      value: string;
+    }[];
+    sorts?: {
+      columnId: string;
+      direction: "asc" | "desc";
+      type?: "text" | "number";
+    }[];
   };
 }) {
   const { tableId } = useParams<{ tableId: string }>();

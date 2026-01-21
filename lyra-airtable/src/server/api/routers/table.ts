@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { faker } from "@faker-js/faker";
 import { TRPCError } from "@trpc/server";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
@@ -416,10 +417,11 @@ export const tableRouter = createTRPCRouter({
       }
 
       // Build final rowWhere condition
-      const rowWhere: Record<string, unknown> = {
+      const rowWhere: NonNullable<
+        Parameters<typeof ctx.db.row.findMany>[0]
+      >["where"] = {
         tableId: table.id,
       };
-
       if (sortedRowIds) {
         // ✅ When sorting, use sorted order
         rowWhere.id = { in: sortedRowIds };
@@ -433,7 +435,7 @@ export const tableRouter = createTRPCRouter({
 
       const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
-          where: rowWhere as any,
+          where: rowWhere,
           orderBy: sortedRowIds
             ? undefined // Already sorted via sortedRowIds order
             : { rowIndex: "asc" }, // Default sort

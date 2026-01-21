@@ -30,7 +30,7 @@ import {
   TextInitial,
   CircleArrowDown,
 } from "lucide-react";
-import type { ColumnInsertPosition } from "../types";
+import type { ColumnInsertPosition, FilterCondition, SortType } from "../types";
 
 // Field agents (AI features) with colors
 const fieldAgents = [
@@ -169,8 +169,16 @@ export default function AddColumnButton({
     limit: number;
     searchQuery?: string;
     filterConjunction?: "and" | "or";
-    filters?: any[];
-    sorts?: any[];
+    filters?: {
+      columnId: string;
+      operator: string;
+      value: string;
+    }[];
+    sorts?: {
+      columnId: string;
+      direction: "asc" | "desc";
+      type?: "text" | "number";
+    }[];
   };
   className?: string;
 }) {

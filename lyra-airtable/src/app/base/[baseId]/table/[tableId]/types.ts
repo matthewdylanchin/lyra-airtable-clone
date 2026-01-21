@@ -109,3 +109,5 @@ export function getFilteredColumnIds(
 
   return columnIds;
 }
+
+export type SortType = { id: string; columnId: string; direction: "asc" | "desc" };

@@ -22,6 +22,7 @@ import type {
 } from "./types";
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
+import type { SortType } from "./types";
 
 type ColumnType = {
   id: string;
@@ -29,8 +30,6 @@ type ColumnType = {
   type: "TEXT" | "NUMBER";
   order: number;
 };
-
-type SortType = { id: string; columnId: string; direction: "asc" | "desc" };
 
 type TableDataType = {
   table: { id: string; name: string; baseId: string };
@@ -107,11 +106,13 @@ export default function TableClient() {
     filterConjunction,
     filters:
       filters.length > 0
-        ? filters.map((f: FilterCondition) => ({
-            columnId: f.columnId,
-            operator: f.operator,
-            value: f.value ?? "",
-          }))
+        ? filters
+            .filter((f): f is Required<FilterCondition> => !!f.value)
+            .map((f) => ({
+              columnId: f.columnId,
+              operator: f.operator,
+              value: f.value,
+            }))
         : undefined,
     sorts:
       sorts.length > 0
