@@ -69,14 +69,12 @@ export const tableRouter = createTRPCRouter({
             ],
           });
 
-          /** Fetch columns back so we have IDs */
           const columns = await tx.column.findMany({
             where: { tableId: table.id },
             orderBy: { order: "asc" },
             select: { id: true, name: true },
           });
 
-          /** Create default rows */
           const rows = await Promise.all(
             Array.from({ length: 20 }).map((_, i) =>
               tx.row.create({
@@ -89,7 +87,6 @@ export const tableRouter = createTRPCRouter({
             ),
           );
 
-          /** Seed default cells for all columns */
           await tx.cell.createMany({
             data: rows.flatMap((r) =>
               columns.map((c) => {
@@ -194,7 +191,7 @@ export const tableRouter = createTRPCRouter({
           .array(
             z.object({
               columnId: z.string(),
-              type: z.enum(["text", "number"]),
+              type: z.enum(["text", "number"]).optional(), // ✅ Made optional - we'll ignore it
               direction: z.enum(["asc", "desc"]),
             }),
           )
@@ -222,12 +219,11 @@ export const tableRouter = createTRPCRouter({
 
       let filteredRowIds: string[] | null = null;
 
-      // ✅ Enhanced filtering with OR/AND logic
+      // Filtering logic
       if (filters?.length) {
         const cellFilterPromises = filters.map(async (filter) => {
           const base: any = { columnId: filter.columnId };
 
-          // Find the column to determine type
           const column = columns.find((c) => c.id === filter.columnId);
           const isNumberColumn = column?.type === "NUMBER";
 
@@ -261,7 +257,6 @@ export const tableRouter = createTRPCRouter({
                 break;
             }
           } else {
-            // ✅ FIXED: Text column filtering with proper Prisma syntax
             switch (filter.operator) {
               case "contains":
                 base.textValue = {
@@ -271,7 +266,6 @@ export const tableRouter = createTRPCRouter({
                 break;
 
               case "not_contains":
-                // ✅ FIX: Use NOT wrapper for case-insensitive negation
                 base.NOT = {
                   textValue: {
                     contains: filter.value,
@@ -288,7 +282,6 @@ export const tableRouter = createTRPCRouter({
                 break;
 
               case "not_equals":
-                // ✅ FIX: Use NOT wrapper for case-insensitive negation
                 base.NOT = {
                   textValue: {
                     equals: filter.value,
@@ -321,17 +314,14 @@ export const tableRouter = createTRPCRouter({
 
         const rowIdSets = await Promise.all(cellFilterPromises);
 
-        // Apply OR/AND logic correctly
         if (rowIdSets.length > 0) {
           if (input.filterConjunction === "or") {
-            // OR logic: union of all sets
             const allRowIds = new Set<string>();
             rowIdSets.forEach((set) => {
               set.forEach((id) => allRowIds.add(id));
             });
             filteredRowIds = Array.from(allRowIds);
           } else {
-            // AND logic: intersection of all sets (default)
             filteredRowIds = Array.from(rowIdSets[0]!);
             for (let i = 1; i < rowIdSets.length; i++) {
               filteredRowIds = filteredRowIds.filter((id) =>
@@ -344,16 +334,27 @@ export const tableRouter = createTRPCRouter({
 
       let sortedRowIds: string[] | null = null;
 
-      // Sorting logic
+      // ✅ FIXED: Sorting logic with auto-detection
       const firstSort = sorts?.[0];
 
       if (firstSort) {
+        // Find the column to determine its actual type
+        const column = columns.find((c) => c.id === firstSort.columnId);
+
+        if (!column) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Sort column not found",
+          });
+        }
+
         const orderBy: any = {};
 
-        if (firstSort.type === "text") {
-          orderBy.textValue = firstSort.direction;
-        } else if (firstSort.type === "number") {
+        // Use the ACTUAL column type from database
+        if (column.type === "NUMBER") {
           orderBy.numberValue = firstSort.direction;
+        } else {
+          orderBy.textValue = firstSort.direction;
         }
 
         const sortedCells = await ctx.db.cell.findMany({
@@ -363,8 +364,6 @@ export const tableRouter = createTRPCRouter({
           },
           orderBy,
           select: { rowId: true },
-          take: limit + 1,
-          skip: cursor ? 1 : 0,
         });
 
         sortedRowIds = sortedCells.map((c) => c.rowId);
@@ -373,24 +372,23 @@ export const tableRouter = createTRPCRouter({
       // Build final rowWhere condition
       const rowWhere: any = { tableId: table.id };
 
-      if (cursor !== undefined) {
-        rowWhere.rowIndex = { gt: cursor };
-      }
-
-      if (filteredRowIds && sortedRowIds) {
-        const filteredSet = new Set(filteredRowIds);
-        const intersected = sortedRowIds.filter((id) => filteredSet.has(id));
-        rowWhere.id = { in: intersected };
-      } else if (sortedRowIds) {
+      if (sortedRowIds) {
+        // ✅ When sorting, use sorted order
         rowWhere.id = { in: sortedRowIds };
       } else if (filteredRowIds) {
+        // ✅ When filtering only, use filtered rows
         rowWhere.id = { in: filteredRowIds };
+      } else if (cursor !== undefined) {
+        // ✅ Default pagination
+        rowWhere.rowIndex = { gt: cursor };
       }
 
       const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
           where: rowWhere,
-          orderBy: undefined, // already sorted manually via sortedRowIds
+          orderBy: sortedRowIds
+            ? undefined // Already sorted via sortedRowIds order
+            : { rowIndex: "asc" }, // Default sort
           take: limit + 1,
           select: { id: true, rowIndex: true },
         }),
@@ -402,8 +400,17 @@ export const tableRouter = createTRPCRouter({
         }),
       ]);
 
-      const hasMore = rows.length > limit;
-      const resultRows = hasMore ? rows.slice(0, limit) : rows;
+      // ✅ If we have sortedRowIds, we need to maintain that order
+      let orderedRows = rows;
+      if (sortedRowIds) {
+        const rowMap = new Map(rows.map((r) => [r.id, r]));
+        orderedRows = sortedRowIds
+          .map((id) => rowMap.get(id))
+          .filter((r): r is NonNullable<typeof r> => r !== undefined);
+      }
+
+      const hasMore = orderedRows.length > limit;
+      const resultRows = hasMore ? orderedRows.slice(0, limit) : orderedRows;
 
       const nextCursor = hasMore
         ? resultRows[resultRows.length - 1]?.rowIndex

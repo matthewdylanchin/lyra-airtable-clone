@@ -27,17 +27,23 @@ export default function ViewActionBar() {
     setSearchButtonRef,
     setFilterPanelOpen,
     setFilterButtonRef,
-    filters, // ✅ Get filters from context
-    setFilters, // ✅ Get setFilters to clear individual filters
+    filters,
+    setFilters,
+    setSortPanelOpen, // ✅ Add sort state
+    setSortButtonRef,
+    sorts,
+    setSorts,
   } = useTableView();
-  const searchButtonRef = useRef<HTMLButtonElement>(null);
-  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sortButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  // Set the ref in context when component mounts
+  // Set the refs in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
     setFilterButtonRef(filterButtonRef);
-  }, [setSearchButtonRef, setFilterButtonRef]);
+    setSearchButtonRef(sortButtonRef);
+  }, [setSearchButtonRef, setFilterButtonRef, setSearchButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
     onSuccess: () => {
@@ -51,20 +57,19 @@ export default function ViewActionBar() {
     seedRows.mutate({ tableId, count: 100_000 });
   };
 
-  // ✅ Get data to show column names
   const { data } = api.table.getData.useInfiniteQuery(
     {
       tableId,
-      limit: 1, // Just need column metadata
+      limit: 1,
     },
     {
       enabled: !!tableId,
-      staleTime: Infinity, // Cache forever
+      staleTime: Infinity,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
-  // ✅ Get unique filtered column IDs and their names
+  // Get unique filtered column IDs and their names
   const filteredColumns = filters
     .map((f) => {
       const column = data?.pages[0]?.columns.find((c) => c.id === f.columnId);
@@ -81,9 +86,32 @@ export default function ViewActionBar() {
       [] as Array<{ id: string; name: string }>,
     );
 
-  // ✅ Remove all filters for a specific column
+  // ✅ Get unique sorted column IDs and their names
+  const sortedColumns = sorts
+    .map((s) => {
+      const column = data?.pages[0]?.columns.find((c) => c.id === s.columnId);
+      return column
+        ? { id: s.columnId, name: column.name, direction: s.direction }
+        : null;
+    })
+    .filter(Boolean)
+    .reduce(
+      (acc, col) => {
+        if (col && !acc.find((c) => c.id === col.id)) {
+          acc.push(col);
+        }
+        return acc;
+      },
+      [] as Array<{ id: string; name: string; direction: "asc" | "desc" }>,
+    );
+
   const removeColumnFilters = (columnId: string) => {
     setFilters(filters.filter((f) => f.columnId !== columnId));
+  };
+
+  // ✅ Remove all sorts for a specific column
+  const removeColumnSorts = (columnId: string) => {
+    setSorts(sorts.filter((s) => s.columnId !== columnId));
   };
 
   return (
@@ -115,7 +143,7 @@ export default function ViewActionBar() {
             <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
           </button>
 
-          {/* ✅ Filter button with badge */}
+          {/* Filter button with badge */}
           <button
             ref={filterButtonRef}
             onClick={() => setFilterPanelOpen(true)}
@@ -130,7 +158,7 @@ export default function ViewActionBar() {
             )}
           </button>
 
-          {/* ✅ Show filtered column badges */}
+          {/* Show filtered column badges */}
           {filteredColumns.map((col) => (
             <div
               key={col.id}
@@ -150,9 +178,38 @@ export default function ViewActionBar() {
             <Layers className="h-4 w-4 text-zinc-500" /> Group
           </button>
 
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
-            <ArrowDownUp className="h-4 w-4 text-zinc-500" /> Sort
+          {/* ✅ Sort button with badge */}
+          <button
+            ref={sortButtonRef}
+            onClick={() => setSortPanelOpen(true)}
+            className="flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100"
+          >
+            <ArrowDownUp className="h-4 w-4 text-zinc-500" />
+            Sort
+            {sorts.length > 0 && (
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                {sorts.length}
+              </span>
+            )}
           </button>
+
+          {/* ✅ Show sorted column badges */}
+          {sortedColumns.map((col) => (
+            <div
+              key={col.id}
+              className="flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700"
+            >
+              <span>
+                Sorted by {col.name} ({col.direction === "asc" ? "↑" : "↓"})
+              </span>
+              <button
+                onClick={() => removeColumnSorts(col.id)}
+                className="rounded hover:bg-purple-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <PaintBucket className="h-4 w-4 text-zinc-500" /> Color

@@ -6,7 +6,7 @@ import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
-import type { FilterCondition, FilterOperator } from "./types";
+import SortPanel from "./Components/SortPanel";
 import { useTableData } from "./hooks/useTableData";
 import { useTableEditing } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
@@ -18,15 +18,39 @@ import type {
   SelectedCell,
   ColumnInsertPosition,
   AddColumnState,
+  FilterCondition,
 } from "./types";
 import FilterPanel from "./Components/FilterPanel";
 
+type ColumnType = {
+  id: string;
+  name: string;
+  type: "TEXT" | "NUMBER";
+  order: number;
+};
+
+type SortType = { id: string; columnId: string; direction: "asc" | "desc" };
+
+type TableDataType = {
+  table: { id: string; name: string; baseId: string };
+  columns: ColumnType[];
+  rows: Array<{ id: string; rowIndex: number }>;
+  cells: Array<{
+    id: string;
+    rowId: string;
+    columnId: string;
+    textValue: string | null;
+    numberValue: number | null;
+    updatedAt: Date;
+  }>;
+  totalCount: number;
+  nextCursor: number | undefined;
+};
+
 export default function TableClient() {
-  /* ---------- Routing ---------- */
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
 
-  /* ---------- View Config from Context ---------- */
   const {
     searchBarOpen,
     setSearchBarOpen,
@@ -36,13 +60,17 @@ export default function TableClient() {
     filterPanelOpen,
     setFilterPanelOpen,
     filterButtonRef,
-    filters, // ✅ Get from context
-    setFilters, // ✅ Get from context
-    filterConjunction, // ✅ Get from context
-    setFilterConjunction, // ✅ Get from context
+    filters,
+    setFilters,
+    filterConjunction,
+    setFilterConjunction,
+    sortPanelOpen,
+    setSortPanelOpen,
+    sortButtonRef,
+    sorts,
+    setSorts,
   } = useTableView();
 
-  /* ---------- Column Sizing State with localStorage ---------- */
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};
     const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
@@ -65,15 +93,14 @@ export default function TableClient() {
   }, [columnSizing, tableId]);
 
   const [addColumnOpen, setAddColumnOpen] = useState<AddColumnState>(null);
-
-  /* ---------- INSTANT OPTIMISTIC UPDATES ---------- */
   const [pendingUpdates, setPendingUpdates] = useState<Record<string, string>>(
     {},
   );
 
-  /* ---------- tRPC Infinite Query with LARGE pages ---------- */
   const utils = api.useUtils();
 
+  // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
+  // Or pass sorts without trying to determine type here
   const {
     data: infiniteData,
     fetchNextPage,
@@ -89,10 +116,19 @@ export default function TableClient() {
       filterConjunction: filterConjunction,
       filters:
         filters.length > 0
-          ? filters.map((f) => ({
+          ? filters.map((f: FilterCondition) => ({
               columnId: f.columnId,
               operator: f.operator,
               value: f.value ?? "",
+            }))
+          : undefined,
+      // ✅ FIX: Just pass the sorts without trying to access infiniteData
+      sorts:
+        sorts.length > 0
+          ? sorts.map((s: SortType) => ({
+              columnId: s.columnId,
+              type: "text" as const, // ✅ Default to text, backend will determine actual type
+              direction: s.direction,
             }))
           : undefined,
     },
@@ -105,8 +141,7 @@ export default function TableClient() {
     },
   );
 
-  // Combine all pages into single data structure
-  const data = useMemo(() => {
+  const data = useMemo((): TableDataType | undefined => {
     if (!infiniteData?.pages) return undefined;
 
     const firstPage = infiniteData.pages[0];
@@ -117,7 +152,7 @@ export default function TableClient() {
 
     return {
       table: firstPage.table,
-      columns: firstPage.columns,
+      columns: firstPage.columns as ColumnType[],
       rows: combinedRows,
       cells: combinedCells,
       totalCount: firstPage.totalCount,
@@ -125,7 +160,6 @@ export default function TableClient() {
     };
   }, [infiniteData]);
 
-  // 🔧 FIX: Use setData instead of invalidate to prevent flash
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
       await utils.table.getData.cancel({ tableId });
@@ -137,10 +171,18 @@ export default function TableClient() {
         filterConjunction: filterConjunction,
         filters:
           filters.length > 0
-            ? filters.map((f) => ({
+            ? filters.map((f: FilterCondition) => ({
                 columnId: f.columnId,
                 operator: f.operator,
                 value: f.value ?? "",
+              }))
+            : undefined,
+        sorts:
+          sorts.length > 0
+            ? sorts.map((s: SortType) => ({
+                columnId: s.columnId,
+                type: "text" as const,
+                direction: s.direction,
               }))
             : undefined,
       });
@@ -153,10 +195,18 @@ export default function TableClient() {
           filterConjunction: filterConjunction,
           filters:
             filters.length > 0
-              ? filters.map((f) => ({
+              ? filters.map((f: FilterCondition) => ({
                   columnId: f.columnId,
                   operator: f.operator,
                   value: f.value ?? "",
+                }))
+              : undefined,
+          sorts:
+            sorts.length > 0
+              ? sorts.map((s: SortType) => ({
+                  columnId: s.columnId,
+                  type: "text" as const,
+                  direction: s.direction,
                 }))
               : undefined,
         },
@@ -201,10 +251,18 @@ export default function TableClient() {
             filterConjunction: filterConjunction,
             filters:
               filters.length > 0
-                ? filters.map((f) => ({
+                ? filters.map((f: FilterCondition) => ({
                     columnId: f.columnId,
                     operator: f.operator,
                     value: f.value ?? "",
+                  }))
+                : undefined,
+            sorts:
+              sorts.length > 0
+                ? sorts.map((s: SortType) => ({
+                    columnId: s.columnId,
+                    type: "text" as const,
+                    direction: s.direction,
                   }))
                 : undefined,
           },
@@ -220,13 +278,9 @@ export default function TableClient() {
     },
   });
 
-  /* ---------- Selection ---------- */
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
-
-  /* ---------- Data shaping ---------- */
   const { cellByKey, tableData } = useTableData(data);
 
-  /* ---------- Apply pending updates to tableData ---------- */
   const tableDataWithPending = useMemo(() => {
     if (Object.keys(pendingUpdates).length === 0) return tableData;
 
@@ -248,7 +302,6 @@ export default function TableClient() {
     });
   }, [tableData, pendingUpdates]);
 
-  /* ---------- Editing ---------- */
   const commitEditSafe = () => {
     void commitEdit();
   };
@@ -273,10 +326,8 @@ export default function TableClient() {
     },
   });
 
-  // ✅ Track which specific match we're focused on
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
-  // ✅ Calculate all matching cells whenever search changes
   const matchingCells = useMemo(() => {
     if (!searchQuery || !data) return [];
 
@@ -334,12 +385,10 @@ export default function TableClient() {
     });
   }, [currentMatch, searchBarOpen]);
 
-  // ✅ Get set of filtered column IDs for green highlighting
   const filteredColumnIds = useMemo(() => {
     return new Set(filters.map((f) => f.columnId));
   }, [filters]);
 
-  /* ---------- Columns ---------- */
   const columns = useMemo(
     () =>
       createColumns({
@@ -361,7 +410,7 @@ export default function TableClient() {
         upsert,
         searchQuery,
         currentMatch,
-        filteredColumnIds, // ✅ Pass to columns for green highlighting
+        filteredColumnIds,
       }),
     [
       data,
@@ -378,7 +427,6 @@ export default function TableClient() {
     ],
   );
 
-  /* ---------- Table ---------- */
   const table = useReactTable({
     data: tableDataWithPending,
     columns,
@@ -395,7 +443,6 @@ export default function TableClient() {
     },
   });
 
-  /* ---------- Virtualization ---------- */
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -405,7 +452,6 @@ export default function TableClient() {
     overscan: 150,
   });
 
-  /* ---------- CLEANUP TIMEOUTS ---------- */
   const timeoutIds = useRef<NodeJS.Timeout[]>([]);
 
   useEffect(() => {
@@ -415,7 +461,6 @@ export default function TableClient() {
     };
   }, []);
 
-  /* ---------- JUMP DETECTION & SMART LOADING ---------- */
   const lastScrollTop = useRef(0);
   const isLoadingJump = useRef(false);
 
@@ -470,7 +515,6 @@ export default function TableClient() {
     return () => container.removeEventListener("scroll", handleScroll);
   }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
 
-  /* ---------- AGGRESSIVE PREFETCHING ---------- */
   const isFetchingMultiple = useRef(false);
 
   const handleEmergencyFetch = useCallback(async () => {
@@ -515,7 +559,6 @@ export default function TableClient() {
     handleEmergencyFetch,
   ]);
 
-  /* ---------- Preload on mount ---------- */
   useEffect(() => {
     if (
       data &&
@@ -527,7 +570,6 @@ export default function TableClient() {
     }
   }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  /* ---------- Keyboard Shortcuts ---------- */
   useKeyboardNavigation({
     table,
     selectedCell,
@@ -549,7 +591,6 @@ export default function TableClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
 
-  /* ---------- Loading / error ---------- */
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -574,7 +615,6 @@ export default function TableClient() {
     );
   }
 
-  /* ---------- Render ---------- */
   return (
     <div className="flex h-full flex-col">
       <SearchBar
@@ -625,6 +665,15 @@ export default function TableClient() {
             isLoadingJump.current
           }
           onOpenSearch={() => setSearchBarOpen(true)}
+        />
+
+        <SortPanel
+          isOpen={sortPanelOpen}
+          onClose={() => setSortPanelOpen(false)}
+          columns={data?.columns ?? []}
+          sorts={sorts}
+          onChange={setSorts}
+          triggerRef={sortButtonRef ?? undefined}
         />
       </div>
     </div>
