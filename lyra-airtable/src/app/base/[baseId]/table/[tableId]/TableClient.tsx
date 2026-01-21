@@ -21,6 +21,7 @@ import type {
   FilterCondition,
 } from "./types";
 import FilterPanel from "./Components/FilterPanel";
+import BottomBar from "@/app/_components/shell/BottomBar";
 
 type ColumnType = {
   id: string;
@@ -212,7 +213,6 @@ export default function TableClient() {
     },
   });
 
-  
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
   const { cellByKey, tableData } = useTableData(data);
 
@@ -618,6 +618,7 @@ export default function TableClient() {
           queryKey={queryKey}
         />
       </div>
+      <BottomBar rowCount={data.totalCount} />
     </div>
   );
 }
