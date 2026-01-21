@@ -9,12 +9,11 @@ export const cellRouter = createTRPCRouter({
       z.object({
         rowId: z.string(),
         columnId: z.string(),
-        value: z.string(), // send as string; server coerces for NUMBER
+        textValue: z.string().nullable(),
+        numberValue: z.number().nullable(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Ownership + consistency check:
-      // row + column must belong to the same table, and base owner must be current user
       const row = await ctx.db.row.findFirst({
         where: {
           id: input.rowId,
@@ -31,24 +30,18 @@ export const cellRouter = createTRPCRouter({
       if (!column) throw new TRPCError({ code: "NOT_FOUND" });
 
       if (column.tableId !== row.tableId) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Row/column mismatch" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Row/column mismatch",
+        });
       }
 
-      const trimmed = input.value.trim();
-
-      const data =
-        column.type === ColumnType.NUMBER
-          ? {
-              numberValue: trimmed === "" ? null : Number(trimmed),
-              textValue: null,
-            }
-          : {
-              textValue: trimmed === "" ? null : trimmed,
-              numberValue: null,
-            };
-
-      // If NUMBER and not parseable
-      if (column.type === ColumnType.NUMBER && trimmed !== "" && Number.isNaN(Number(trimmed))) {
+      // Validation
+      if (
+        column.type === ColumnType.NUMBER &&
+        input.numberValue !== null &&
+        Number.isNaN(input.numberValue)
+      ) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Please enter a valid number",
@@ -56,16 +49,21 @@ export const cellRouter = createTRPCRouter({
       }
 
       return ctx.db.cell.upsert({
-        where: { rowId_columnId: { rowId: input.rowId, columnId: input.columnId } },
-        create: { rowId: input.rowId, columnId: input.columnId, ...data },
-        update: data,
-        select: {
-          id: true,
-          rowId: true,
-          columnId: true,
-          textValue: true,
-          numberValue: true,
-          updatedAt: true,
+        where: {
+          rowId_columnId: {
+            rowId: input.rowId,
+            columnId: input.columnId,
+          },
+        },
+        create: {
+          rowId: input.rowId,
+          columnId: input.columnId,
+          textValue: input.textValue,
+          numberValue: input.numberValue,
+        },
+        update: {
+          textValue: input.textValue,
+          numberValue: input.numberValue,
         },
       });
     }),

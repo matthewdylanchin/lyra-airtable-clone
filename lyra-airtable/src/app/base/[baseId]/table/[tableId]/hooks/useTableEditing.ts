@@ -77,12 +77,15 @@ export function useTableEditing({
 
     console.log("🟡 [commitEdit] Calling upsert.mutate", performance.now());
 
-    // ✅ Save to backend (async, happens in background)
+    const column = data?.columns.find((c) => c.id === columnId);
+    const isNumber = column?.type === "NUMBER";
+
     upsert.mutate(
       {
         rowId,
         columnId,
-        value: draft,
+        textValue: isNumber ? null : draft,
+        numberValue: isNumber ? Number(draft) : null,
       },
       {
         onError: (error) => {

@@ -171,12 +171,19 @@ export default function TableClient() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            cells: page.cells.map((cell) =>
-              cell.rowId === variables.rowId &&
-              cell.columnId === variables.columnId
-                ? { ...cell, textValue: variables.value }
-                : cell,
-            ),
+            cells: page.cells.map((cell) => {
+              if (
+                cell.rowId === variables.rowId &&
+                cell.columnId === variables.columnId
+              ) {
+                return {
+                  ...cell,
+                  textValue: variables.textValue,
+                  numberValue: variables.numberValue,
+                };
+              }
+              return cell;
+            }),
           })),
         };
       });
@@ -184,8 +191,7 @@ export default function TableClient() {
       return { previousData };
     },
 
-    onSuccess: (data, variables) => {
-      console.log("✅ Cell update successful");
+    onSuccess: (_data, variables) => {
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -193,8 +199,7 @@ export default function TableClient() {
       });
     },
 
-    onError: (err, variables, context) => {
-      console.log("🔴 Cell update failed, rolling back");
+    onError: (_err, variables, context) => {
       if (context?.previousData) {
         utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
@@ -207,6 +212,7 @@ export default function TableClient() {
     },
   });
 
+  
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
   const { cellByKey, tableData } = useTableData(data);
 
@@ -609,7 +615,7 @@ export default function TableClient() {
             isLoadingJump.current
           }
           onOpenSearch={() => setSearchBarOpen(true)}
-          queryKey = {queryKey}
+          queryKey={queryKey}
         />
       </div>
     </div>
