@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Sparkles } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import type { FilterCondition } from "../types";
-import CustomDropdown from "./CustomDropdown";
 
 interface Column {
   id: string;
@@ -22,6 +21,87 @@ interface FilterPanelProps {
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
   conjunctionMode?: "and" | "or";
   onConjunctionModeChange?: (mode: "and" | "or") => void;
+}
+
+interface CustomDropdownProps {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  className?: string;
+}
+
+function CustomDropdown({
+  value,
+  options,
+  onChange,
+  className = "",
+}: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  return (
+    <div ref={dropdownRef} className={`relative ${className}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between rounded border border-zinc-200 bg-white px-3 py-1.5 text-sm transition-colors hover:border-zinc-300"
+      >
+        <span>{selectedOption?.label || "Select"}</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          className="text-zinc-400"
+        >
+          <path
+            d="M3 4.5L6 7.5L9 4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-10 mt-1 w-full rounded-md border border-zinc-200 bg-white shadow-lg">
+          <div className="py-1">
+            {options.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+                className="w-full px-3 py-1.5 text-left text-sm transition-colors hover:bg-zinc-50"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const TEXT_OPERATORS = [
@@ -120,7 +200,7 @@ export default function FilterPanel({
   const updateCondition = (
     id: string,
     key: keyof FilterCondition,
-    value: string,
+    value: string | undefined,
   ) => {
     onChange(filters.map((f) => (f.id === id ? { ...f, [key]: value } : f)));
   };
@@ -142,19 +222,22 @@ export default function FilterPanel({
       style={{ top: position.top, left: position.left }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-        <h3 className="text-sm font-semibold text-zinc-900">Filter</h3>
-        <button onClick={onClose} className="rounded p-1 hover:bg-zinc-100">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
+        <h3 className="text-sm font-medium text-zinc-900">Filter</h3>
+        <button
+          onClick={onClose}
+          className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+        >
           <X size={16} />
         </button>
       </div>
 
       {/* AI Prompt */}
-      <div className="border-b border-zinc-200 px-4 py-3">
-        <div className="flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-2">
-          <Sparkles size={16} className="text-purple-500" />
+      <div className="border-b border-zinc-100 px-4 py-3">
+        <div className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2.5 transition-colors hover:border-zinc-300">
+          <Sparkles size={14} className="flex-shrink-0 text-purple-500" />
           <input
-            className="flex-1 text-sm outline-none"
+            className="flex-1 text-sm outline-none placeholder:text-zinc-400"
             placeholder="Describe what you want to see"
           />
         </div>
@@ -162,14 +245,16 @@ export default function FilterPanel({
 
       {/* Filters */}
       <div className="px-4 py-3">
-        <div className="mb-3 text-xs font-medium text-zinc-600">
+        <div className="mb-3 text-xs text-zinc-600">
           In this view, show records
         </div>
 
         <div className="space-y-2">
           {filters.length === 0 ? (
-            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-zinc-500">
-              No filters applied
+            <div className="rounded-md py-8 text-center">
+              <div className="mb-1 text-sm text-zinc-500">
+                No filter conditions are applied
+              </div>
             </div>
           ) : (
             filters.map((condition, index) => {
@@ -181,12 +266,11 @@ export default function FilterPanel({
               );
 
               return (
-                <div
-                  key={condition.id}
-                  className="flex items-center gap-2 rounded-md border-zinc-200 px-3 py-2"
-                >
+                <div key={condition.id} className="flex items-center gap-2">
                   {index === 0 ? (
-                    <span className="text-xs font-medium">Where</span>
+                    <span className="w-[52px] text-xs font-medium text-zinc-700">
+                      Where
+                    </span>
                   ) : index === 1 ? (
                     <CustomDropdown
                       value={conjunctionMode}
@@ -197,10 +281,10 @@ export default function FilterPanel({
                       onChange={(v) =>
                         onConjunctionModeChange?.(v as "and" | "or")
                       }
-                      className="w-[80px]"
+                      className="w-[52px]"
                     />
                   ) : (
-                    <span className="text-xs font-medium">
+                    <span className="w-[52px] text-xs font-medium text-zinc-700">
                       {conjunctionMode === "and" ? "And" : "Or"}
                     </span>
                   )}
@@ -214,7 +298,7 @@ export default function FilterPanel({
                     onChange={(v) =>
                       updateCondition(condition.id, "columnId", v)
                     }
-                    className="w-[160px]"
+                    className="w-[120px]"
                   />
 
                   <CustomDropdown
@@ -223,7 +307,7 @@ export default function FilterPanel({
                     onChange={(v) =>
                       updateCondition(condition.id, "operator", v)
                     }
-                    className="w-[140px]"
+                    className="w-[120px]"
                   />
 
                   {needsValueInput(condition.operator) && (
@@ -232,14 +316,14 @@ export default function FilterPanel({
                       onChange={(e) =>
                         updateCondition(condition.id, "value", e.target.value)
                       }
-                      className="flex-1 rounded border border-zinc-200 px-2 py-1 text-sm"
+                      className="flex-1 rounded border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none"
                       placeholder="Enter a value"
                     />
                   )}
 
                   <button
                     onClick={() => removeCondition(condition.id)}
-                    className="rounded p-1 hover:bg-zinc-100"
+                    className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -251,7 +335,7 @@ export default function FilterPanel({
 
         <button
           onClick={addCondition}
-          className="mt-3 flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+          className="mt-3 flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-700"
         >
           <Plus size={14} />
           Add condition
@@ -261,4 +345,58 @@ export default function FilterPanel({
   );
 
   return createPortal(panel, document.body);
+}
+
+// Demo component to show the filter panel in action
+function Demo() {
+  const [isOpen, setIsOpen] = useState(true);
+  const [filters, setFilters] = useState<FilterCondition[]>([
+    { id: "1", columnId: "name", operator: "contains", value: "" },
+    { id: "2", columnId: "name", operator: "contains", value: "" },
+    { id: "3", columnId: "name", operator: "contains", value: "" },
+  ]);
+  const [conjunctionMode, setConjunctionMode] = useState<"and" | "or">("and");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const columns: Column[] = [
+    { id: "name", name: "Name", type: "TEXT" },
+    { id: "status", name: "Status", type: "TEXT" },
+    { id: "assignee", name: "Assignee", type: "TEXT" },
+    { id: "priority", name: "Priority", type: "TEXT" },
+    { id: "count", name: "Count", type: "NUMBER" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-zinc-50 p-8">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-4 flex justify-end">
+          <button
+            ref={triggerRef}
+            onClick={() => setIsOpen(!isOpen)}
+            className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-medium transition-colors hover:bg-zinc-50"
+          >
+            Toggle Filter Panel
+          </button>
+        </div>
+
+        <FilterPanel
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          columns={columns}
+          filters={filters}
+          onChange={setFilters}
+          triggerRef={triggerRef}
+          conjunctionMode={conjunctionMode}
+          onConjunctionModeChange={setConjunctionMode}
+        />
+
+        <div className="rounded-lg border border-zinc-200 bg-white p-6">
+          <h2 className="mb-4 text-lg font-semibold">Current Filters</h2>
+          <pre className="overflow-auto rounded bg-zinc-50 p-4 text-xs">
+            {JSON.stringify({ filters, conjunctionMode }, null, 2)}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
 }
