@@ -446,10 +446,12 @@ export function TableView({
                     </th>
                   );
                 })}
-                <th className="w-25 max-w-25 min-w-25 border-r border-b border-l border-gray-200 px-0 py-0 text-xs font-medium text-gray-600">
-                  <div className="flex h-full w-full items-center justify-center">
-                    <AddColumnButton tableId={tableId} queryKey={queryKey} />
-                  </div>
+                <th className="relative w-25 max-w-25 min-w-25 border-r border-b border-l border-gray-200 p-0">
+                  <AddColumnButton
+                    tableId={tableId}
+                    queryKey={queryKey}
+                    className="absolute inset-0"
+                  />
                 </th>
               </tr>
             ))}

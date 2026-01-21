@@ -156,6 +156,7 @@ export default function AddColumnButton({
   targetColumnRef,
   initialPosition,
   queryKey,
+  className,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
@@ -171,6 +172,7 @@ export default function AddColumnButton({
     filters?: any[];
     sorts?: any[];
   };
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -376,21 +378,21 @@ export default function AddColumnButton({
 
       // ✅ Smart horizontal positioning - flip to left if would be cut off on right
       if (left + menuWidth > window.innerWidth - padding) {
-        // Position to the left of the trigger instead
-        if (initialPosition) {
-          // For form, align right edge with trigger
-          left = initialPosition.left - menuWidth + 40; // 40px is approximate button width
-        } else {
-          const refToUse = targetColumnRef?.current ?? buttonRef.current;
-          if (refToUse) {
-            const rect = refToUse.getBoundingClientRect();
-            left = rect.right - menuWidth;
-          }
-        }
+        const refToUse = targetColumnRef?.current ?? buttonRef.current;
+        if (!refToUse) return;
+
+        const rect = refToUse.getBoundingClientRect();
+
+        // Anchor menu to the RIGHT edge of the button
+        left = rect.right - menuWidth;
       }
 
       // Ensure menu doesn't go off left edge
-      left = Math.max(padding, left);
+      // Clamp horizontally so it never overflows viewport
+      left = Math.min(
+        Math.max(padding, left),
+        window.innerWidth - menuWidth - padding,
+      );
 
       // Adjust if menu would go off bottom
       if (top + menuHeight > window.innerHeight - padding) {
@@ -713,7 +715,7 @@ export default function AddColumnButton({
       <button
         ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 rounded px-2 py-1.5 text-sm hover:bg-zinc-100"
+        className={`flex h-full w-full items-center justify-center transition-colors hover:bg-zinc-100 ${className ?? ""} `}
       >
         <Plus size={16} />
       </button>
