@@ -52,12 +52,13 @@ export default function FilterPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [conjunctionMode, setConjunctionMode] = useState<"and" | "or">("and"); // ✅ Track AND/OR
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Calculate position
+  // Calculate position - align to RIGHT of button
   useEffect(() => {
     if (!isOpen || !triggerRef?.current) return;
 
@@ -66,7 +67,7 @@ export default function FilterPanel({
       if (buttonRect) {
         setPosition({
           top: buttonRect.bottom + 8,
-          left: buttonRect.left,
+          left: buttonRect.right - 680, // ✅ Panel width 680px - aligns right edge to button
         });
       }
     };
@@ -177,10 +178,10 @@ export default function FilterPanel({
         {/* Condition Group Header */}
         <div className="mb-2 flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
           <span className="text-sm font-medium text-zinc-700">Where</span>
-          <select className="rounded border-none bg-transparent text-sm text-zinc-600 outline-none">
-            <option>Any of the following are true...</option>
-            <option>All of the following are true...</option>
-          </select>
+          <span className="text-sm text-zinc-600">
+            {conjunctionMode === "and" ? "All" : "Any"} of the following are
+            true...
+          </span>
           <div className="ml-auto flex gap-1">
             <button className="rounded p-1 hover:bg-zinc-200">
               <Plus size={14} className="text-zinc-600" />
@@ -208,7 +209,7 @@ export default function FilterPanel({
               <p className="text-sm text-zinc-500">No filters applied</p>
             </div>
           ) : (
-            filters.map((condition) => {
+            filters.map((condition, index) => {
               const operators = getOperatorsForColumn(condition.columnId);
               const showValueInput = needsValueInput(condition.operator);
 
@@ -217,7 +218,24 @@ export default function FilterPanel({
                   key={condition.id}
                   className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
                 >
-                  <span className="text-xs text-zinc-600">Where</span>
+                  {/* ✅ AND/OR Dropdown (only show after first condition) */}
+                  {index > 0 && (
+                    <select
+                      value={conjunctionMode}
+                      onChange={(e) =>
+                        setConjunctionMode(e.target.value as "and" | "or")
+                      }
+                      className="rounded border-none bg-transparent px-1 py-0 text-xs font-medium text-zinc-700 outline-none"
+                    >
+                      <option value="and">And</option>
+                      <option value="or">Or</option>
+                    </select>
+                  )}
+
+                  {/* ✅ Show "Where" only for first condition */}
+                  {index === 0 && (
+                    <span className="text-xs text-zinc-600">Where</span>
+                  )}
 
                   {/* Column Select */}
                   <select
@@ -240,7 +258,7 @@ export default function FilterPanel({
                     onChange={(e) =>
                       updateCondition(condition.id, "operator", e.target.value)
                     }
-                    className="rounded border-none bg-transparent px-2 py-1 text-sm text-blue-600 outline-none"
+                    className="rounded border-none bg-transparent px-2 py-1 text-sm text-zinc-600 outline-none"
                   >
                     {operators.map((op) => (
                       <option key={op.value} value={op.value}>

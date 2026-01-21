@@ -279,6 +279,14 @@ export default function AddColumnButton({
         const newOrder =
           variables.position === "before" ? anchorOrder : anchorOrder + 1;
 
+        // 🔥 SHIFT EXISTING COLUMNS
+        const shiftedColumns = existingColumns.map((col) => {
+          if (col.order >= newOrder) {
+            return { ...col, order: col.order + 1 };
+          }
+          return col;
+        });
+
         const newColumn = {
           id: tempColumnId,
           name: variables.name,
@@ -290,7 +298,9 @@ export default function AddColumnButton({
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            columns: [...page.columns, newColumn],
+            columns: [...shiftedColumns, newColumn].sort(
+              (a, b) => a.order - b.order,
+            ),
             cells: [
               ...page.cells,
               ...page.rows.map((row) => ({

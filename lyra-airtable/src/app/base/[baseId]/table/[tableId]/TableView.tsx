@@ -392,7 +392,6 @@ export function TableView({
     visibleColumns.length,
     tableContainerRef,
   ]);
-
   /* ---------- Render ---------- */
 
   const tableWidth = visibleColumns.reduce(
