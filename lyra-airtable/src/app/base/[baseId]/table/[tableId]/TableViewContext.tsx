@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
+import type { FilterCondition } from "./types";
 
 type TableViewContextType = {
   searchBarOpen: boolean;
@@ -14,6 +15,11 @@ type TableViewContextType = {
   setFilterPanelOpen: (open: boolean) => void;
   filterButtonRef: React.RefObject<HTMLButtonElement | null> | null;
   setFilterButtonRef: (ref: React.RefObject<HTMLButtonElement | null>) => void;
+
+  filters: FilterCondition[];
+  setFilters: (filters: FilterCondition[]) => void;
+  filterConjunction: "and" | "or";
+  setFilterConjunction: (mode: "and" | "or") => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -28,6 +34,11 @@ export function TableViewProvider({ children }: { children: ReactNode }) {
   const [filterButtonRef, setFilterButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
 
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [filterConjunction, setFilterConjunction] = useState<"and" | "or">(
+    "and",
+  );
+
   return (
     <TableViewContext.Provider
       value={{
@@ -41,6 +52,10 @@ export function TableViewProvider({ children }: { children: ReactNode }) {
         setFilterPanelOpen,
         filterButtonRef,
         setFilterButtonRef,
+        filters,
+        setFilters,
+        filterConjunction,
+        setFilterConjunction,
       }}
     >
       {children}

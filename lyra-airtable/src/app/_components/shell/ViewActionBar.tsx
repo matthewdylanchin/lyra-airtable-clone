@@ -13,11 +13,11 @@ import {
   ExternalLink,
   Sheet,
   Menu,
+  X,
 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
 import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewContext";
-import { useState } from "react";
 
 export default function ViewActionBar() {
   const { tableId } = useParams<{ tableId: string }>();
@@ -27,6 +27,8 @@ export default function ViewActionBar() {
     setSearchButtonRef,
     setFilterPanelOpen,
     setFilterButtonRef,
+    filters, // ✅ Get filters from context
+    setFilters, // ✅ Get setFilters to clear individual filters
   } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
@@ -47,6 +49,41 @@ export default function ViewActionBar() {
     if (seedRows.isPending) return;
     if (!confirm("Add 100,000 fake rows to this table?")) return;
     seedRows.mutate({ tableId, count: 100_000 });
+  };
+
+  // ✅ Get data to show column names
+  const { data } = api.table.getData.useInfiniteQuery(
+    {
+      tableId,
+      limit: 1, // Just need column metadata
+    },
+    {
+      enabled: !!tableId,
+      staleTime: Infinity, // Cache forever
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
+
+  // ✅ Get unique filtered column IDs and their names
+  const filteredColumns = filters
+    .map((f) => {
+      const column = data?.pages[0]?.columns.find((c) => c.id === f.columnId);
+      return column ? { id: f.columnId, name: column.name } : null;
+    })
+    .filter(Boolean)
+    .reduce(
+      (acc, col) => {
+        if (col && !acc.find((c) => c.id === col.id)) {
+          acc.push(col);
+        }
+        return acc;
+      },
+      [] as Array<{ id: string; name: string }>,
+    );
+
+  // ✅ Remove all filters for a specific column
+  const removeColumnFilters = (columnId: string) => {
+    setFilters(filters.filter((f) => f.columnId !== columnId));
   };
 
   return (
@@ -78,6 +115,7 @@ export default function ViewActionBar() {
             <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
           </button>
 
+          {/* ✅ Filter button with badge */}
           <button
             ref={filterButtonRef}
             onClick={() => setFilterPanelOpen(true)}
@@ -85,7 +123,28 @@ export default function ViewActionBar() {
           >
             <Filter className="h-4 w-4 text-zinc-500" />
             Filter
+            {filters.length > 0 && (
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                {filters.length}
+              </span>
+            )}
           </button>
+
+          {/* ✅ Show filtered column badges */}
+          {filteredColumns.map((col) => (
+            <div
+              key={col.id}
+              className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+            >
+              <span>Filtered by {col.name}</span>
+              <button
+                onClick={() => removeColumnFilters(col.id)}
+                className="rounded hover:bg-emerald-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <Layers className="h-4 w-4 text-zinc-500" /> Group

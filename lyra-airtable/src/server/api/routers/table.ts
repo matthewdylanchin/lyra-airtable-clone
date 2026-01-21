@@ -261,7 +261,7 @@ export const tableRouter = createTRPCRouter({
                 break;
             }
           } else {
-            // Text column
+            // ✅ FIXED: Text column filtering with proper Prisma syntax
             switch (filter.operator) {
               case "contains":
                 base.textValue = {
@@ -269,22 +269,38 @@ export const tableRouter = createTRPCRouter({
                   mode: "insensitive",
                 };
                 break;
+
               case "not_contains":
-                base.textValue = {
-                  not: { contains: filter.value, mode: "insensitive" },
+                // ✅ FIX: Use NOT wrapper for case-insensitive negation
+                base.NOT = {
+                  textValue: {
+                    contains: filter.value,
+                    mode: "insensitive",
+                  },
                 };
                 break;
+
               case "equals":
-                base.textValue = { equals: filter.value, mode: "insensitive" };
-                break;
-              case "not_equals":
                 base.textValue = {
-                  not: { equals: filter.value, mode: "insensitive" },
+                  equals: filter.value,
+                  mode: "insensitive",
                 };
                 break;
+
+              case "not_equals":
+                // ✅ FIX: Use NOT wrapper for case-insensitive negation
+                base.NOT = {
+                  textValue: {
+                    equals: filter.value,
+                    mode: "insensitive",
+                  },
+                };
+                break;
+
               case "empty":
                 base.OR = [{ textValue: null }, { textValue: "" }];
                 break;
+
               case "not_empty":
                 base.AND = [
                   { textValue: { not: null } },
@@ -305,7 +321,7 @@ export const tableRouter = createTRPCRouter({
 
         const rowIdSets = await Promise.all(cellFilterPromises);
 
-        // ✅ FIXED: Apply OR/AND logic correctly (removed duplicate code)
+        // Apply OR/AND logic correctly
         if (rowIdSets.length > 0) {
           if (input.filterConjunction === "or") {
             // OR logic: union of all sets

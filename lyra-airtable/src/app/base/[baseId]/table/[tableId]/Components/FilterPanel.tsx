@@ -70,7 +70,7 @@ export default function FilterPanel({
       if (buttonRect) {
         setPosition({
           top: buttonRect.bottom + 8,
-          left: buttonRect.right - 680, // ✅ Panel width 680px - aligns right edge to button
+          left: buttonRect.right - 680,
         });
       }
     };
@@ -178,42 +178,6 @@ export default function FilterPanel({
           In this view, show records
         </div>
 
-        {/* Condition Group Header */}
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-          <span className="text-sm font-medium text-zinc-700">Where</span>
-          <select
-            value={conjunctionMode}
-            onChange={(e) =>
-              onConjunctionModeChange?.(e.target.value as "and" | "or")
-            }
-            className="rounded border-none bg-transparent px-1 py-0 text-sm text-zinc-600 outline-none hover:bg-zinc-100"
-          >
-            <option value="and">All</option>
-            <option value="or">Any</option>
-          </select>
-          <span className="text-sm text-zinc-600">
-            of the following are true...
-          </span>
-          <div className="ml-auto flex gap-1">
-            <button className="rounded p-1 hover:bg-zinc-200">
-              <Plus size={14} className="text-zinc-600" />
-            </button>
-            <button className="rounded p-1 hover:bg-zinc-200">
-              <Trash2 size={14} className="text-zinc-600" />
-            </button>
-            <button className="rounded p-1 hover:bg-zinc-200">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-
         {/* Filter Conditions */}
         <div className="space-y-2">
           {filters.length === 0 ? (
@@ -230,16 +194,30 @@ export default function FilterPanel({
                   key={condition.id}
                   className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
                 >
-                  {/* ✅ AND/OR Label (only show after first condition) */}
-                  {index > 0 && (
+                  {/* ✅ First condition: "Where" */}
+                  {/* ✅ Second condition: AND/OR dropdown (editable) */}
+                  {/* ✅ Rest: Show label matching current mode (not editable) */}
+                  {index === 0 ? (
+                    <span className="text-xs font-medium text-zinc-700">
+                      Where
+                    </span>
+                  ) : index === 1 ? (
+                    <select
+                      value={conjunctionMode}
+                      onChange={(e) =>
+                        onConjunctionModeChange?.(
+                          e.target.value as "and" | "or",
+                        )
+                      }
+                      className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 outline-none hover:border-zinc-400"
+                    >
+                      <option value="and">And</option>
+                      <option value="or">Or</option>
+                    </select>
+                  ) : (
                     <span className="text-xs font-medium text-zinc-700">
                       {conjunctionMode === "and" ? "And" : "Or"}
                     </span>
-                  )}
-
-                  {/* ✅ Show "Where" only for first condition */}
-                  {index === 0 && (
-                    <span className="text-xs text-zinc-600">Where</span>
                   )}
 
                   {/* Column Select */}
@@ -310,7 +288,7 @@ export default function FilterPanel({
           )}
         </div>
 
-        {/* Add Condition Buttons */}
+        {/* Add Condition Button */}
         <div className="mt-3 flex gap-3 text-sm">
           <button
             onClick={addCondition}
@@ -318,27 +296,6 @@ export default function FilterPanel({
           >
             <Plus size={14} />
             Add condition
-          </button>
-          <button className="flex items-center gap-1 text-zinc-600 hover:text-zinc-900">
-            <Plus size={14} />
-            Add condition group
-          </button>
-          <button className="ml-auto flex items-center gap-1 text-zinc-400 hover:text-zinc-600">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M12 16v-4M12 8h.01"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
           </button>
         </div>
       </div>

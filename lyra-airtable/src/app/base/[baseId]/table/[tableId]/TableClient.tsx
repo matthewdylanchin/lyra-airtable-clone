@@ -26,8 +26,7 @@ export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
 
-  /* ---------- View Config (Search, Filter, Sort) ---------- */
-  /* ---------- Search from Context ---------- */
+  /* ---------- View Config from Context ---------- */
   const {
     searchBarOpen,
     setSearchBarOpen,
@@ -37,6 +36,10 @@ export default function TableClient() {
     filterPanelOpen,
     setFilterPanelOpen,
     filterButtonRef,
+    filters, // ✅ Get from context
+    setFilters, // ✅ Get from context
+    filterConjunction, // ✅ Get from context
+    setFilterConjunction, // ✅ Get from context
   } = useTableView();
 
   /* ---------- Column Sizing State with localStorage ---------- */
@@ -52,13 +55,6 @@ export default function TableClient() {
     }
     return {} as ColumnSizingState;
   });
-
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
-
-  // ✅ FIX: Add filterConjunction state that was missing
-  const [filterConjunction, setFilterConjunction] = useState<"and" | "or">(
-    "and",
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -90,7 +86,6 @@ export default function TableClient() {
       tableId,
       limit: 5000,
       searchQuery: searchQuery || undefined,
-      // ✅ FIX: Pass filterConjunction to backend
       filterConjunction: filterConjunction,
       filters:
         filters.length > 0
@@ -133,10 +128,8 @@ export default function TableClient() {
   // 🔧 FIX: Use setData instead of invalidate to prevent flash
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
-      // Cancel any outgoing refetches
       await utils.table.getData.cancel({ tableId });
 
-      // Snapshot the previous value
       const previousData = utils.table.getData.getInfiniteData({
         tableId,
         limit: 5000,
@@ -152,7 +145,6 @@ export default function TableClient() {
             : undefined,
       });
 
-      // Optimistically update cache
       utils.table.getData.setInfiniteData(
         {
           tableId,
@@ -191,7 +183,6 @@ export default function TableClient() {
 
     onSuccess: (data, variables) => {
       console.log("✅ Cell update successful");
-      // Remove from pending updates
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -201,7 +192,6 @@ export default function TableClient() {
 
     onError: (err, variables, context) => {
       console.log("🔴 Cell update failed, rolling back");
-      // Rollback on error
       if (context?.previousData) {
         utils.table.getData.setInfiniteData(
           {
@@ -222,7 +212,6 @@ export default function TableClient() {
         );
       }
 
-      // Remove from pending
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -284,10 +273,10 @@ export default function TableClient() {
     },
   });
 
-  // ✅ NEW: Track which specific match we're focused on
+  // ✅ Track which specific match we're focused on
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
-  // ✅ NEW: Calculate all matching cells whenever search changes
+  // ✅ Calculate all matching cells whenever search changes
   const matchingCells = useMemo(() => {
     if (!searchQuery || !data) return [];
 
@@ -309,7 +298,7 @@ export default function TableClient() {
             rowId: row.id,
             columnId: col.id,
             rowIndex,
-            colIndex: colIndex + 1, // +1 because of index column
+            colIndex: colIndex + 1,
           });
         }
       });
@@ -318,15 +307,12 @@ export default function TableClient() {
     return matches;
   }, [searchQuery, data, cellByKey]);
 
-  // ✅ NEW: Reset match index when search changes
   useEffect(() => {
     setCurrentMatchIndex(0);
   }, [searchQuery]);
 
-  // ✅ NEW: Get current focused match
   const currentMatch = matchingCells[currentMatchIndex] ?? null;
 
-  // ✅ NEW: Navigate to next/previous match
   const goToNextMatch = useCallback(() => {
     if (matchingCells.length === 0) return;
     setCurrentMatchIndex((prev) => (prev + 1) % matchingCells.length);
@@ -339,7 +325,6 @@ export default function TableClient() {
     );
   }, [matchingCells.length]);
 
-  // ✅ NEW: Scroll to current match
   useEffect(() => {
     if (!currentMatch || searchBarOpen) return;
 
@@ -348,6 +333,11 @@ export default function TableClient() {
       colIndex: currentMatch.colIndex,
     });
   }, [currentMatch, searchBarOpen]);
+
+  // ✅ Get set of filtered column IDs for green highlighting
+  const filteredColumnIds = useMemo(() => {
+    return new Set(filters.map((f) => f.columnId));
+  }, [filters]);
 
   /* ---------- Columns ---------- */
   const columns = useMemo(
@@ -371,6 +361,7 @@ export default function TableClient() {
         upsert,
         searchQuery,
         currentMatch,
+        filteredColumnIds, // ✅ Pass to columns for green highlighting
       }),
     [
       data,
@@ -383,6 +374,7 @@ export default function TableClient() {
       upsert,
       searchQuery,
       currentMatch,
+      filteredColumnIds,
     ],
   );
 
@@ -545,7 +537,6 @@ export default function TableClient() {
     setDraft,
   });
 
-  // ✨ Add Cmd/Ctrl+F shortcut to open search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -586,7 +577,6 @@ export default function TableClient() {
   /* ---------- Render ---------- */
   return (
     <div className="flex h-full flex-col">
-      {/* Search Bar */}
       <SearchBar
         isOpen={searchBarOpen}
         onClose={() => {
