@@ -13,7 +13,7 @@ import {
   ExternalLink,
   Sheet,
   Menu,
-  X,
+  ListFilter,
 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
@@ -29,7 +29,7 @@ export default function ViewActionBar() {
     setFilterButtonRef,
     filters,
     setFilters,
-    setSortPanelOpen, // ✅ Add sort state
+    setSortPanelOpen,
     setSortButtonRef,
     sorts,
     setSorts,
@@ -43,7 +43,7 @@ export default function ViewActionBar() {
     setSearchButtonRef(searchButtonRef);
     setFilterButtonRef(filterButtonRef);
     setSortButtonRef(sortButtonRef);
-  }, [setSearchButtonRef, setFilterButtonRef, setSearchButtonRef]);
+  }, [setSearchButtonRef, setFilterButtonRef, setSortButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
     onSuccess: () => {
@@ -69,49 +69,38 @@ export default function ViewActionBar() {
     },
   );
 
-  // Get unique filtered column IDs and their names
-  const filteredColumns = filters
+  // Get unique filtered column names
+  const filteredColumnNames = filters
     .map((f) => {
       const column = data?.pages[0]?.columns.find((c) => c.id === f.columnId);
-      return column ? { id: f.columnId, name: column.name } : null;
+      return column?.name;
     })
     .filter(Boolean)
-    .reduce(
-      (acc, col) => {
-        if (col && !acc.find((c) => c.id === col.id)) {
-          acc.push(col);
-        }
-        return acc;
-      },
-      [] as Array<{ id: string; name: string }>,
-    );
+    .filter((name, index, self) => self.indexOf(name) === index);
 
-  // ✅ Get unique sorted column IDs and their names
-  const sortedColumns = sorts
+  // Get unique sorted column names
+  const sortedColumnNames = sorts
     .map((s) => {
       const column = data?.pages[0]?.columns.find((c) => c.id === s.columnId);
-      return column
-        ? { id: s.columnId, name: column.name, direction: s.direction }
-        : null;
+      return column?.name;
     })
     .filter(Boolean)
-    .reduce(
-      (acc, col) => {
-        if (col && !acc.find((c) => c.id === col.id)) {
-          acc.push(col);
-        }
-        return acc;
-      },
-      [] as Array<{ id: string; name: string; direction: "asc" | "desc" }>,
-    );
+    .filter((name, index, self) => self.indexOf(name) === index);
 
-  const removeColumnFilters = (columnId: string) => {
-    setFilters(filters.filter((f) => f.columnId !== columnId));
+  // Generate filter button text
+  const getFilterButtonText = () => {
+    if (filters.length === 0) return "Filter";
+    if (filteredColumnNames.length === 1) {
+      return `Filtered by ${filteredColumnNames[0]}`;
+    }
+    const otherCount = filteredColumnNames.length - 1;
+    return `Filtered by ${filteredColumnNames[0]} and ${otherCount} other field${otherCount > 1 ? "s" : ""}`;
   };
 
-  // ✅ Remove all sorts for a specific column
-  const removeColumnSorts = (columnId: string) => {
-    setSorts(sorts.filter((s) => s.columnId !== columnId));
+  // Generate sort button text
+  const getSortButtonText = () => {
+    if (sorts.length === 0) return "Sort";
+    return `Sorted by ${sorts.length} field${sorts.length > 1 ? "s" : ""}`;
   };
 
   return (
@@ -143,73 +132,51 @@ export default function ViewActionBar() {
             <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
           </button>
 
-          {/* Filter button with badge */}
+          {/* Filter button with dynamic text */}
           <button
             ref={filterButtonRef}
             onClick={() => setFilterPanelOpen(true)}
-            className="flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100"
+            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
+              filters.length > 0 ? "bg-emerald-100 text-zinc-700" : ""
+            }`}
           >
-            <Filter className="h-4 w-4 text-zinc-500" />
-            Filter
+            <ListFilter className="h-4 w-4" />
+            {getFilterButtonText()}
             {filters.length > 0 && (
-              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                {filters.length}
-              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFilters([]);
+                }}
+                className="cursor-pointer rounded hover:bg-emerald-100"
+              ></span>
             )}
           </button>
-
-          {/* Show filtered column badges */}
-          {filteredColumns.map((col) => (
-            <div
-              key={col.id}
-              className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
-            >
-              <span>Filtered by {col.name}</span>
-              <button
-                onClick={() => removeColumnFilters(col.id)}
-                className="rounded hover:bg-emerald-100"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <Layers className="h-4 w-4 text-zinc-500" /> Group
           </button>
 
-          {/* ✅ Sort button with badge */}
+          {/* Sort button with dynamic text */}
           <button
             ref={sortButtonRef}
             onClick={() => setSortPanelOpen(true)}
-            className="flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100"
+            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
+              sorts.length > 0 ? "bg-orange-100 text-zinc-700" : ""
+            }`}
           >
-            <ArrowDownUp className="h-4 w-4 text-zinc-500" />
-            Sort
+            <ArrowDownUp className="h-4 w-4" />
+            {getSortButtonText()}
             {sorts.length > 0 && (
-              <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                {sorts.length}
-              </span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSorts([]);
+                }}
+                className="cursor-pointer rounded hover:bg-orange-100"
+              ></span>
             )}
           </button>
-
-          {/* ✅ Show sorted column badges */}
-          {sortedColumns.map((col) => (
-            <div
-              key={col.id}
-              className="flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-xs font-medium text-purple-700"
-            >
-              <span>
-                Sorted by {col.name} ({col.direction === "asc" ? "↑" : "↓"})
-              </span>
-              <button
-                onClick={() => removeColumnSorts(col.id)}
-                className="rounded hover:bg-purple-100"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <PaintBucket className="h-4 w-4 text-zinc-500" /> Color
