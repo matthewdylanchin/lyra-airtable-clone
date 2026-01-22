@@ -493,11 +493,12 @@ export default function TableClient() {
     const loadedRowCount = data?.rows.length ?? 0;
     const remainingBuffer = loadedRowCount - lastItem.index;
 
-    if (remainingBuffer < 5000 && hasNextPage && !isFetchingNextPage) {
-      if (remainingBuffer < 500) {
+    if (remainingBuffer < 8000 && hasNextPage && !isFetchingNextPage) {
+      if (remainingBuffer < 1500) {
         console.log("🔥 EMERGENCY: Fetching multiple pages!");
         void handleEmergencyFetch();
       } else {
+        void fetchNextPage();
         void fetchNextPage();
       }
     }
