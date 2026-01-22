@@ -33,6 +33,7 @@ export default function ViewActionBar() {
     setSortButtonRef,
     sorts,
     setSorts,
+    dataQueryKey,
   } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -46,8 +47,35 @@ export default function ViewActionBar() {
   }, [setSearchButtonRef, setFilterButtonRef, setSortButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onMutate: async ({ count }) => {
+      if (!dataQueryKey) return;
+
+      await utils.table.getData.cancel(dataQueryKey);
+
+      const previous = utils.table.getData.getInfiniteData(dataQueryKey);
+
+      utils.table.getData.setInfiniteData(dataQueryKey, (old) => {
+        if (!old || !count) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page, i) =>
+            i === 0 ? { ...page, totalCount: page.totalCount + count } : page,
+          ),
+        };
+      });
+
+      return { previous };
+    },
+
+    onSuccess: async () => {
+      if (!dataQueryKey) return;
+      await utils.table.getData.invalidate(dataQueryKey);
+    },
+
+    onError: (_err, _vars, ctx) => {
+      if (!dataQueryKey || !ctx?.previous) return;
+      utils.table.getData.setInfiniteData(dataQueryKey, ctx.previous);
     },
   });
 

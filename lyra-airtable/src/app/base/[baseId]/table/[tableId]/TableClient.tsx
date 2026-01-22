@@ -99,30 +99,39 @@ export default function TableClient() {
 
   const utils = api.useUtils();
 
-  const queryKey = {
-    tableId,
-    limit: 5000,
-    searchQuery: searchQuery || undefined,
-    filterConjunction,
-    filters:
-      filters.length > 0
-        ? filters
-            .filter((f): f is Required<FilterCondition> => !!f.value)
-            .map((f) => ({
-              columnId: f.columnId,
-              operator: f.operator,
-              value: f.value,
+  const queryKey = useMemo(
+    () => ({
+      tableId,
+      limit: 5000,
+      searchQuery: searchQuery || undefined,
+      filterConjunction,
+      filters:
+        filters.length > 0
+          ? filters
+              .filter((f): f is Required<FilterCondition> => !!f.value)
+              .map((f) => ({
+                columnId: f.columnId,
+                operator: f.operator,
+                value: f.value,
+              }))
+          : undefined,
+      sorts:
+        sorts.length > 0
+          ? sorts.map((s: SortType) => ({
+              columnId: s.columnId,
+              type: "text" as const,
+              direction: s.direction,
             }))
-        : undefined,
-    sorts:
-      sorts.length > 0
-        ? sorts.map((s: SortType) => ({
-            columnId: s.columnId,
-            type: "text" as const,
-            direction: s.direction,
-          }))
-        : undefined,
-  };
+          : undefined,
+    }),
+    [tableId, searchQuery, filterConjunction, filters, sorts],
+  );
+
+  const { setDataQueryKey } = useTableView();
+
+  useEffect(() => {
+    setDataQueryKey(queryKey);
+  }, [queryKey, setDataQueryKey]);
 
   // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
   // Or pass sorts without trying to determine type here
@@ -484,11 +493,12 @@ export default function TableClient() {
     const loadedRowCount = data?.rows.length ?? 0;
     const remainingBuffer = loadedRowCount - lastItem.index;
 
-    if (remainingBuffer < 2000 && hasNextPage && !isFetchingNextPage) {
-      if (remainingBuffer < 500) {
+    if (remainingBuffer < 8000 && hasNextPage && !isFetchingNextPage) {
+      if (remainingBuffer < 1500) {
         console.log("🔥 EMERGENCY: Fetching multiple pages!");
         void handleEmergencyFetch();
       } else {
+        void fetchNextPage();
         void fetchNextPage();
       }
     }
@@ -504,7 +514,7 @@ export default function TableClient() {
   useEffect(() => {
     if (
       data &&
-      data.rows.length < 10000 &&
+      data.rows.length < 20000 &&
       hasNextPage &&
       !isFetchingNextPage
     ) {

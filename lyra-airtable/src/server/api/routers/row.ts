@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { faker } from "@faker-js/faker";
 
 export const rowRouter = createTRPCRouter({
   /** -----------------------------------------
@@ -179,16 +180,21 @@ export const rowRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { tableId, count } = input;
 
-      const startIndex = await ctx.db.row.count({
+      // Get the highest rowIndex, not the count
+      const lastRow = await ctx.db.row.findFirst({
         where: { tableId },
+        orderBy: { rowIndex: "desc" },
+        select: { rowIndex: true },
       });
+
+      const startIndex = lastRow ? lastRow.rowIndex + 1 : 0;
 
       const columns = await ctx.db.column.findMany({
         where: { tableId },
         select: { id: true, name: true, type: true },
       });
 
-      // 1. Create rows in bulk
+      // 1. Create ALL rows in one bulk insert
       const rowData = Array.from({ length: count }, (_, i) => ({
         tableId,
         rowIndex: startIndex + i,
@@ -198,52 +204,52 @@ export const rowRouter = createTRPCRouter({
 
       // 2. Fetch the newly created rows so we have their IDs
       const newRows = await ctx.db.row.findMany({
-        where: { tableId, rowIndex: { gte: startIndex } },
+        where: {
+          tableId,
+          rowIndex: { gte: startIndex, lt: startIndex + count },
+        },
         select: { id: true, rowIndex: true },
         orderBy: { rowIndex: "asc" },
       });
 
-      // 3. Build fake cell data
+      // 3. Build cell data with faker.js
       const allCells: {
         rowId: string;
         columnId: string;
-        textValue?: string;
-        numberValue?: number;
+        textValue?: string | null;
+        numberValue?: number | null;
       }[] = [];
 
       for (const row of newRows) {
         for (const col of columns) {
-          // simple fake value helper – replace with faker if you like
-          let textValue: string | undefined;
-          let numberValue: number | undefined;
-
           if (col.type === "NUMBER") {
-            numberValue = row.rowIndex; // or Math.floor(Math.random() * 1000)
+            allCells.push({
+              rowId: row.id,
+              columnId: col.id,
+              textValue: null,
+              numberValue: faker.number.int({ min: 1, max: 10000 }),
+            });
           } else {
-            textValue = `${col.name} ${row.rowIndex + 1}`;
-            // or faker.lorem.words(3)
+            // Use faker for text data
+            allCells.push({
+              rowId: row.id,
+              columnId: col.id,
+              textValue: faker.lorem.words(3),
+              numberValue: null,
+            });
           }
-
-          allCells.push({
-            rowId: row.id,
-            columnId: col.id,
-            textValue,
-            numberValue,
-          });
         }
       }
 
-      // 4. Insert cells in chunks to avoid huge single query
+      // 4. Insert cells in chunks
       const CHUNK_SIZE = 10_000;
       for (let i = 0; i < allCells.length; i += CHUNK_SIZE) {
         const chunk = allCells.slice(i, i + CHUNK_SIZE);
-        // eslint-disable-next-line no-await-in-loop
         await ctx.db.cell.createMany({ data: chunk });
       }
 
       return { insertedRows: newRows.length };
     }),
-
   /** -----------------------------------------
    * REORDER ROWS (future use)
    * ----------------------------------------- */

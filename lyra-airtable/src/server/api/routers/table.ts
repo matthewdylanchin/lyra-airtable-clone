@@ -416,23 +416,21 @@ export const tableRouter = createTRPCRouter({
         sortedRowIds = sortedCells.map((c) => c.rowId);
       }
 
-      // Build final rowWhere condition
+      // ✅ Choose active row set (filtering>sorting> pagination)
+
       const rowWhere: NonNullable<
         Parameters<typeof ctx.db.row.findMany>[0]
       >["where"] = {
         tableId: table.id,
       };
-      if (sortedRowIds) {
-        // ✅ When sorting, use sorted order
-        rowWhere.id = { in: sortedRowIds };
-      } else if (filteredRowIds) {
-        // ✅ When filtering only, use filtered rows
-        rowWhere.id = { in: filteredRowIds };
+
+      const rowIdCache = filteredRowIds ?? sortedRowIds ?? null;
+
+      if (rowIdCache) {
+        rowWhere.id = { in: rowIdCache };
       } else if (cursor !== undefined) {
-        // ✅ Default pagination
         rowWhere.rowIndex = { gt: cursor };
       }
-
       const [rows, totalCount] = await Promise.all([
         ctx.db.row.findMany({
           where: rowWhere,

@@ -2,6 +2,9 @@
 
 import { createContext, useContext, useState } from "react";
 import type { FilterCondition } from "./types";
+import type { RouterInputs } from "@/trpc/react";
+
+type TableDataQueryInput = RouterInputs["table"]["getData"];
 
 // ✅ Add SortCondition type
 export type SortCondition = {
@@ -40,6 +43,9 @@ type TableViewContextType = {
   >;
   sorts: SortCondition[];
   setSorts: (sorts: SortCondition[]) => void;
+
+  dataQueryKey: TableDataQueryInput | null;
+  setDataQueryKey: (key: TableDataQueryInput) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -62,6 +68,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const [sortButtonRef, setSortButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
   const [sorts, setSorts] = useState<SortCondition[]>([]);
+  const [dataQueryKey, setDataQueryKey] = useState<TableDataQueryInput | null>(
+    null,
+  );
 
   return (
     <TableViewContext.Provider
@@ -86,6 +95,8 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         setSortButtonRef,
         sorts,
         setSorts,
+        dataQueryKey,
+        setDataQueryKey,
       }}
     >
       {children}
