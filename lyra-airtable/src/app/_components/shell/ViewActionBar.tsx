@@ -46,8 +46,9 @@ export default function ViewActionBar() {
   }, [setSearchButtonRef, setFilterButtonRef, setSortButtonRef]);
 
   const seedRows = api.row.seedMany.useMutation({
-    onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
+    onSuccess: async () => {
+      await utils.table.getData.reset({ tableId });
+      await utils.table.getData.refetch({ tableId });
     },
   });
 
