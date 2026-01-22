@@ -204,6 +204,24 @@ export default function AddColumnButton({
     setMounted(true);
   }, []);
 
+  function replaceTempColumnId(tempId: string, realId: string) {
+    utils.table.getData.setInfiniteData(queryKey, (old) => {
+      if (!old) return old;
+
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          columns: page.columns.map((col) =>
+            col.id === tempId ? { ...col, id: realId } : col,
+          ),
+          cells: page.cells.map((cell) =>
+            cell.columnId === tempId ? { ...cell, columnId: realId } : cell,
+          ),
+        })),
+      };
+    });
+  }
   // ⚡ OPTIMISTIC: Create column
   const createColumn = api.column.create.useMutation({
     onMutate: async (variables) => {
@@ -212,12 +230,12 @@ export default function AddColumnButton({
 
       // Snapshot previous data
       const previousData = utils.table.getData.getInfiniteData(queryKey);
+      const tempColumnId = `temp-col-${crypto.randomUUID()}`;
 
       // ✨ Optimistically add column to cache
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
-        const tempColumnId = `temp-col-${Date.now()}`;
         const existingColumns = old.pages[0]?.columns ?? [];
         const newOrder = existingColumns.length;
 
@@ -237,7 +255,7 @@ export default function AddColumnButton({
             cells: [
               ...page.cells,
               ...page.rows.map((row) => ({
-                id: `temp-cell-${row.id}-${tempColumnId}`,
+                id: `temp-cell-${crypto.randomUUID()}`,
                 rowId: row.id,
                 columnId: tempColumnId,
                 textValue: "",
@@ -249,20 +267,17 @@ export default function AddColumnButton({
         };
       });
 
-      return { previousData };
+      return { previousData, tempColumnId };
     },
 
-    onSuccess: async () => {
-      console.log("✅ Column created successfully");
-      // Refetch to get real IDs and correct order
-      await utils.table.getData.invalidate(queryKey);
+    onSuccess: (realColumn, _vars, ctx) => {
+      if (!ctx?.tempColumnId) return;
+      replaceTempColumnId(ctx.tempColumnId, realColumn.id);
     },
 
-    onError: (error, variables, context) => {
-      console.error("Create column error:", error);
-      // Rollback on error
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previousData) {
+        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
       }
     },
   });
@@ -273,11 +288,11 @@ export default function AddColumnButton({
       await utils.table.getData.cancel(queryKey);
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
+      const tempColumnId = `temp-col-${crypto.randomUUID()}`;
       // ✨ Optimistically insert column
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
-        const tempColumnId = `temp-col-${Date.now()}`;
         const existingColumns = old.pages[0]?.columns ?? [];
 
         // Find anchor column's order
@@ -314,7 +329,7 @@ export default function AddColumnButton({
             cells: [
               ...page.cells,
               ...page.rows.map((row) => ({
-                id: `temp-cell-${row.id}-${tempColumnId}`,
+                id: `temp-cell-${crypto.randomUUID()}`,
                 rowId: row.id,
                 columnId: tempColumnId,
                 textValue: "",
@@ -326,18 +341,17 @@ export default function AddColumnButton({
         };
       });
 
-      return { previousData };
+      return { previousData, tempColumnId };
     },
 
-    onSuccess: async () => {
-      console.log("✅ Column inserted successfully");
-      await utils.table.getData.invalidate(queryKey);
+    onSuccess: (realColumn, _, ctx) => {
+      if (!ctx?.tempColumnId) return;
+      replaceTempColumnId(ctx.tempColumnId, realColumn.id);
     },
 
-    onError: (error, variables, context) => {
-      console.error("Insert column error:", error);
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previousData) {
+        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
       }
     },
   });

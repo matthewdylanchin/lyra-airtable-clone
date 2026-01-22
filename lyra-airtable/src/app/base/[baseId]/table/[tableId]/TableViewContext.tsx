@@ -46,6 +46,9 @@ type TableViewContextType = {
 
   dataQueryKey: TableDataQueryInput | null;
   setDataQueryKey: (key: TableDataQueryInput) => void;
+
+  isBusy: boolean;
+  setIsBusy: (v: boolean) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -68,6 +71,8 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const [sortButtonRef, setSortButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
   const [sorts, setSorts] = useState<SortCondition[]>([]);
+
+  const [isBusy, setIsBusy] = useState(false);
   const [dataQueryKey, setDataQueryKey] = useState<TableDataQueryInput | null>(
     null,
   );
@@ -97,6 +102,8 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         setSorts,
         dataQueryKey,
         setDataQueryKey,
+        isBusy,
+        setIsBusy,
       }}
     >
       {children}

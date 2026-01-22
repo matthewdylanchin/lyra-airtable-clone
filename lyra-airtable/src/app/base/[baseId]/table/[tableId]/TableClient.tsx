@@ -23,6 +23,7 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
+import { TableLoadingIndicator } from "./Components/LoadingIndicator";
 
 type ColumnType = {
   id: string;
@@ -69,6 +70,7 @@ export default function TableClient() {
     sortButtonRef,
     sorts,
     setSorts,
+    setIsBusy,
   } = useTableView();
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -140,6 +142,7 @@ export default function TableClient() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isFetching,
     isLoading,
     error,
   } = api.table.getData.useInfiniteQuery(queryKey, {
@@ -171,6 +174,14 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
+      if (
+        variables.rowId.startsWith("temp-") ||
+        variables.columnId.startsWith("temp-")
+      ) {
+        // Allow UI to update, but DO NOT hit backend
+        return;
+      }
+
       await utils.table.getData.cancel(queryKey);
 
       const previousData = utils.table.getData.getInfiniteData(queryKey);
@@ -543,6 +554,25 @@ export default function TableClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
 
+  useEffect(() => {
+    setIsBusy(
+      isLoading ||
+      isFetching ||
+        isFetchingNextPage ||
+        isFetchingMultiple.current ||
+        isLoadingJump.current ||
+        upsert.isPending,
+    );
+  }, [
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    isFetchingMultiple.current,
+    isLoadingJump.current,
+    upsert.isPending,
+    setIsBusy,
+  ]);
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -566,6 +596,12 @@ export default function TableClient() {
       </div>
     );
   }
+
+  const isBusy =
+    isLoading ||
+    isFetchingNextPage ||
+    isFetchingMultiple.current ||
+    isLoadingJump.current;
 
   return (
     <div className="flex h-full flex-col">

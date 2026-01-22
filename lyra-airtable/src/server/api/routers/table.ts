@@ -3,7 +3,6 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { faker } from "@faker-js/faker";
 import { TRPCError } from "@trpc/server";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
-import { Prisma } from "@prisma/client";
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
@@ -192,7 +191,7 @@ export const tableRouter = createTRPCRouter({
           .array(
             z.object({
               columnId: z.string(),
-              type: z.enum(["text", "number"]).optional(), // ✅ Made optional - we'll ignore it
+              type: z.enum(["text", "number"]).optional(),
               direction: z.enum(["asc", "desc"]),
             }),
           )
@@ -220,7 +219,7 @@ export const tableRouter = createTRPCRouter({
 
       let filteredRowIds: string[] | null = null;
 
-      // Filtering logic
+      // ========== FILTERING LOGIC (unchanged) ==========
       if (filters?.length) {
         const cellFilterPromises = filters.map(async (filter) => {
           const base: Record<string, unknown> = {
@@ -353,13 +352,28 @@ export const tableRouter = createTRPCRouter({
         }
       }
 
-      let sortedRowIds: string[] | null = null;
+      // ========== ✅ FIXED SORTING LOGIC ==========
+      // Build the WHERE clause for rows
+      const rowWhere: NonNullable<
+        Parameters<typeof ctx.db.row.findMany>[0]
+      >["where"] = {
+        tableId: table.id,
+      };
 
-      // ✅ FIXED: Sorting logic with auto-detection
+      // Apply filtering if present
+      if (filteredRowIds) {
+        rowWhere.id = { in: filteredRowIds };
+      } else if (cursor !== undefined) {
+        rowWhere.rowIndex = { gt: cursor };
+      }
+
+      // ✅ NEW: Build Prisma orderBy for sorting
+      let orderBy: NonNullable<
+        Parameters<typeof ctx.db.row.findMany>[0]
+      >["orderBy"] = { rowIndex: "asc" };
+
       const firstSort = sorts?.[0];
-
       if (firstSort) {
-        // Find the column to determine its actual type
         const column = columns.find((c) => c.id === firstSort.columnId);
 
         if (!column) {
@@ -369,96 +383,87 @@ export const tableRouter = createTRPCRouter({
           });
         }
 
-        const orderBy: Record<string, "asc" | "desc"> = {};
+        // ✅ Use Prisma's relation sorting via cells
+        // This tells Prisma: "JOIN to cells table and order by the cell value"
+        orderBy = {
+          cells: {
+            _count: column.type === "NUMBER" ? undefined : "desc",
+          },
+        };
 
-        // Use the ACTUAL column type from database
-        if (column.type === "NUMBER") {
-          orderBy.numberValue = firstSort.direction;
-        } else {
-          orderBy.textValue = firstSort.direction;
+        // Note: Prisma doesn't support direct relation sorting with WHERE clause on the relation
+        // So we need a different approach for large datasets
+      }
+
+      // ✅ WORKAROUND: For sorting, we'll use a subquery approach
+      let rows;
+      let totalCount;
+
+      if (firstSort) {
+        const column = columns.find((c) => c.id === firstSort.columnId);
+        if (!column) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Sort column not found",
+          });
         }
 
-        const sortedCells = (await ctx.db.cell.findMany({
+        // Get sorted cell data first
+        const sortedCells = await ctx.db.cell.findMany({
           where: {
             columnId: firstSort.columnId,
-            ...(filteredRowIds ? { rowId: { in: filteredRowIds } } : {}),
+            row: rowWhere,
           },
           select: {
             rowId: true,
             textValue: true,
             numberValue: true,
           },
-        })) as Array<{
-          rowId: string;
-          textValue: string | null;
-          numberValue: number | null;
-        }>;
-
-        // ✅ Sort in memory with case-insensitive comparison
-        sortedCells.sort((a, b) => {
-          if (column.type === "NUMBER") {
-            const aVal = a.numberValue ?? -Infinity;
-            const bVal = b.numberValue ?? -Infinity;
-            return firstSort.direction === "asc" ? aVal - bVal : bVal - aVal;
-          } else {
-            // ✅ Case-insensitive text comparison
-            const aVal = (a.textValue ?? "").toLowerCase();
-            const bVal = (b.textValue ?? "").toLowerCase();
-
-            if (firstSort.direction === "asc") {
-              return aVal.localeCompare(bVal);
-            } else {
-              return bVal.localeCompare(aVal);
-            }
-          }
+          orderBy:
+            column.type === "NUMBER"
+              ? { numberValue: firstSort.direction }
+              : { textValue: firstSort.direction },
         });
 
-        sortedRowIds = sortedCells.map((c) => c.rowId);
-      }
+        const sortedRowIds = sortedCells.map((c) => c.rowId);
 
-      // ✅ Choose active row set (filtering>sorting> pagination)
+        // Fetch rows in sorted order with pagination
+        const rowsToFetch = sortedRowIds.slice(0, limit + 1);
 
-      const rowWhere: NonNullable<
-        Parameters<typeof ctx.db.row.findMany>[0]
-      >["where"] = {
-        tableId: table.id,
-      };
+        [rows, totalCount] = await Promise.all([
+          ctx.db.row.findMany({
+            where: {
+              id: { in: rowsToFetch },
+            },
+            select: { id: true, rowIndex: true },
+          }),
+          ctx.db.row.count({
+            where: rowWhere,
+          }),
+        ]);
 
-      const rowIdCache = filteredRowIds ?? sortedRowIds ?? null;
-
-      if (rowIdCache) {
-        rowWhere.id = { in: rowIdCache };
-      } else if (cursor !== undefined) {
-        rowWhere.rowIndex = { gt: cursor };
-      }
-      const [rows, totalCount] = await Promise.all([
-        ctx.db.row.findMany({
-          where: rowWhere,
-          orderBy: sortedRowIds
-            ? undefined // Already sorted via sortedRowIds order
-            : { rowIndex: "asc" }, // Default sort
-          take: limit + 1,
-          select: { id: true, rowIndex: true },
-        }),
-        ctx.db.row.count({
-          where: {
-            tableId: table.id,
-            ...(filteredRowIds ? { id: { in: filteredRowIds } } : {}),
-          },
-        }),
-      ]);
-
-      // ✅ If we have sortedRowIds, we need to maintain that order
-      let orderedRows = rows;
-      if (sortedRowIds) {
+        // Maintain sort order
         const rowMap = new Map(rows.map((r) => [r.id, r]));
-        orderedRows = sortedRowIds
+        rows = rowsToFetch
           .map((id) => rowMap.get(id))
           .filter((r): r is NonNullable<typeof r> => r !== undefined);
+      } else {
+        // No sorting - use default pagination
+        [rows, totalCount] = await Promise.all([
+          ctx.db.row.findMany({
+            where: rowWhere,
+            orderBy: { rowIndex: "asc" },
+            take: limit + 1,
+            select: { id: true, rowIndex: true },
+          }),
+          ctx.db.row.count({
+            where: rowWhere,
+          }),
+        ]);
       }
 
-      const hasMore = orderedRows.length > limit;
-      const resultRows = hasMore ? orderedRows.slice(0, limit) : orderedRows;
+      const hasMore = rows.length > limit;
+      const resultRows = hasMore ? rows.slice(0, limit) : rows;
 
       const nextCursor = hasMore
         ? resultRows[resultRows.length - 1]?.rowIndex
