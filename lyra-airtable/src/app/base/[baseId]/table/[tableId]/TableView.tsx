@@ -57,6 +57,25 @@ export function TableView({
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
+  // replace tempRowIds helper
+  function replaceTempRowId(tempId: string, realId: string) {
+    utils.table.getData.setInfiniteData(queryKey, (old) => {
+      if (!old) return old;
+
+      return {
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          rows: page.rows.map((r) =>
+            r.id === tempId ? { ...r, id: realId } : r,
+          ),
+          cells: page.cells.map((c) =>
+            c.rowId === tempId ? { ...c, rowId: realId } : c,
+          ),
+        })),
+      };
+    });
+  }
   /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
 
   // ⚡ OPTIMISTIC: Append at bottom (used by "+ Add row")
@@ -68,6 +87,8 @@ export function TableView({
       // Snapshot previous data
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
+      const tempRowId = `temp-${crypto.randomUUID()}`;
+
       // Get current row count
       const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
       const newRowIndex = currentRowCount;
@@ -77,7 +98,6 @@ export function TableView({
         if (!old?.pages.length) return old;
 
         // Create temporary row with temp ID
-        const tempRowId = `temp-row-${Date.now()}`;
         const tempRow = {
           id: tempRowId,
           rowIndex: newRowIndex,
@@ -86,7 +106,7 @@ export function TableView({
         // Create empty cells for new row
         const columns = old.pages[0]?.columns ?? [];
         const tempCells = columns.map((col) => ({
-          id: `temp-cell-${col.id}-${Date.now()}`,
+          id: `temp-cell-${col.id}-${crypto.randomUUID()}`,
           rowId: tempRowId,
           columnId: col.id,
           textValue: "",
@@ -114,19 +134,18 @@ export function TableView({
         };
       });
 
-      return { previousData };
+      return { previousData, tempRowId };
     },
 
-    onSuccess: async () => {
+    onSuccess: (realRow, _, ctx) => {
       // Refetch to get real IDs
-      await utils.table.getData.invalidate(queryKey);
+      // await utils.table.getData.invalidate(queryKey);
+      replaceTempRowId(ctx.tempRowId, realRow.id);
     },
 
-    onError: (err, variables, context) => {
-      console.error("Failed to add row:", err);
-      // Rollback
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previousData) {
+        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
       }
     },
   });

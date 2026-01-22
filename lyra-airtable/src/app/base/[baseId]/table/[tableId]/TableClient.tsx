@@ -171,6 +171,14 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
+      if (
+        variables.rowId.startsWith("temp-") ||
+        variables.columnId.startsWith("temp-")
+      ) {
+        // Allow UI to update, but DO NOT hit backend
+        return;
+      }
+
       await utils.table.getData.cancel(queryKey);
 
       const previousData = utils.table.getData.getInfiniteData(queryKey);
