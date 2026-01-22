@@ -99,30 +99,39 @@ export default function TableClient() {
 
   const utils = api.useUtils();
 
-  const queryKey = {
-    tableId,
-    limit: 5000,
-    searchQuery: searchQuery || undefined,
-    filterConjunction,
-    filters:
-      filters.length > 0
-        ? filters
-            .filter((f): f is Required<FilterCondition> => !!f.value)
-            .map((f) => ({
-              columnId: f.columnId,
-              operator: f.operator,
-              value: f.value,
+  const queryKey = useMemo(
+    () => ({
+      tableId,
+      limit: 5000,
+      searchQuery: searchQuery || undefined,
+      filterConjunction,
+      filters:
+        filters.length > 0
+          ? filters
+              .filter((f): f is Required<FilterCondition> => !!f.value)
+              .map((f) => ({
+                columnId: f.columnId,
+                operator: f.operator,
+                value: f.value,
+              }))
+          : undefined,
+      sorts:
+        sorts.length > 0
+          ? sorts.map((s: SortType) => ({
+              columnId: s.columnId,
+              type: "text" as const,
+              direction: s.direction,
             }))
-        : undefined,
-    sorts:
-      sorts.length > 0
-        ? sorts.map((s: SortType) => ({
-            columnId: s.columnId,
-            type: "text" as const,
-            direction: s.direction,
-          }))
-        : undefined,
-  };
+          : undefined,
+    }),
+    [tableId, searchQuery, filterConjunction, filters, sorts],
+  );
+
+  const { setDataQueryKey } = useTableView();
+
+  useEffect(() => {
+    setDataQueryKey(queryKey);
+  }, [queryKey, setDataQueryKey]);
 
   // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
   // Or pass sorts without trying to determine type here

@@ -40,6 +40,9 @@ type TableViewContextType = {
   >;
   sorts: SortCondition[];
   setSorts: (sorts: SortCondition[]) => void;
+
+  dataQueryKey: any | null;
+  setDataQueryKey: (key: any) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -62,6 +65,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const [sortButtonRef, setSortButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
   const [sorts, setSorts] = useState<SortCondition[]>([]);
+  const [dataQueryKey, setDataQueryKey] = useState<any | null>(null);
 
   return (
     <TableViewContext.Provider
@@ -86,6 +90,8 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         setSortButtonRef,
         sorts,
         setSorts,
+        dataQueryKey,
+        setDataQueryKey
       }}
     >
       {children}
