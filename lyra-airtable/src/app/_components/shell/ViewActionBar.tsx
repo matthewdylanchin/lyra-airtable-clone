@@ -47,8 +47,7 @@ export default function ViewActionBar() {
 
   const seedRows = api.row.seedMany.useMutation({
     onSuccess: async () => {
-      await utils.table.getData.reset({ tableId });
-      await utils.table.getData.refetch({ tableId });
+      await utils.table.getData.invalidate();
     },
   });
 

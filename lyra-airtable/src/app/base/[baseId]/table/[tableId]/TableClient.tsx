@@ -484,7 +484,7 @@ export default function TableClient() {
     const loadedRowCount = data?.rows.length ?? 0;
     const remainingBuffer = loadedRowCount - lastItem.index;
 
-    if (remainingBuffer < 2000 && hasNextPage && !isFetchingNextPage) {
+    if (remainingBuffer < 5000 && hasNextPage && !isFetchingNextPage) {
       if (remainingBuffer < 500) {
         console.log("🔥 EMERGENCY: Fetching multiple pages!");
         void handleEmergencyFetch();
@@ -504,7 +504,7 @@ export default function TableClient() {
   useEffect(() => {
     if (
       data &&
-      data.rows.length < 10000 &&
+      data.rows.length < 20000 &&
       hasNextPage &&
       !isFetchingNextPage
     ) {
