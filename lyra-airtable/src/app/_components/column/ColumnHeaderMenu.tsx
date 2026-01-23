@@ -60,7 +60,7 @@ export default function ColumnHeaderMenu({
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
   const utils = api.useUtils();
-  const queryClient = useQueryClient(); // ✅ Add this
+  const queryClient = useQueryClient();
 
   const deleteColumn = api.column.delete.useMutation({
     onMutate: async ({ columnId }) => {
@@ -72,24 +72,49 @@ export default function ColumnHeaderMenu({
         predicate: (query) => {
           const key = query.queryKey;
 
+          // Type guard to check if this is a valid table query key
+          if (!Array.isArray(key) || key.length !== 2) {
+            return false;
+          }
+
+          const [path, params] = key;
+
+          // Check if path matches ["table", "getData"]
           if (
-            !Array.isArray(key) ||
-            key.length !== 2 ||
-            !Array.isArray(key[0]) ||
-            key[0][0] !== "table" ||
-            key[0][1] !== "getData" ||
-            typeof key[1] !== "object" ||
-            key[1] === null ||
-            !("input" in key[1]) ||
-            typeof (key[1] as any).input?.tableId !== "string"
+            !Array.isArray(path) ||
+            path.length !== 2 ||
+            path[0] !== "table" ||
+            path[1] !== "getData"
           ) {
             return false;
           }
 
-          const typedKey = key as TableQueryKey;
-          return typedKey[1].input.tableId === tableId;
+          // Type guard for params object
+          if (
+            typeof params !== "object" ||
+            params === null ||
+            !("input" in params)
+          ) {
+            return false;
+          }
+
+          // Now we can safely access input
+          const input = (params as { input: unknown }).input;
+
+          // Check if input has tableId
+          if (
+            typeof input !== "object" ||
+            input === null ||
+            !("tableId" in input)
+          ) {
+            return false;
+          }
+
+          // Final check for tableId match
+          return (input as { tableId: string }).tableId === tableId;
         },
       });
+
       console.log(`🔄 Updating ${allQueries.length} queries`);
 
       // Update each query's data optimistically
