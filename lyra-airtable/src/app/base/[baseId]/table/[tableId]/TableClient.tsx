@@ -541,6 +541,12 @@ export default function TableClient() {
     setDraft,
   });
 
+  const isBusy = isLoading || isFetchingNextPage || upsert.isPending;
+
+  useEffect(() => {
+    setIsBusy(isBusy);
+  }, [isBusy, setIsBusy]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -595,12 +601,6 @@ export default function TableClient() {
       </div>
     );
   }
-
-  const isBusy = isLoading || isFetchingNextPage || upsert.isPending;
-
-  useEffect(() => {
-    setIsBusy(isBusy);
-  }, [isBusy, setIsBusy]);
 
   return (
     <div className="flex h-full flex-col">

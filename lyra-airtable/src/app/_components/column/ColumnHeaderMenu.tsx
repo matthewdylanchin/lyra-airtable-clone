@@ -48,12 +48,49 @@ export default function ColumnHeaderMenu({
 
   const utils = api.useUtils();
   const deleteColumn = api.column.delete.useMutation({
+    onMutate: async ({ columnId }) => {
+      // Cancel any outgoing refetches for this table
+      await utils.table.getData.cancel({ tableId, limit: 5000 });
+
+      // Snapshot the previous value
+      const previous = utils.table.getData.getInfiniteData({
+        tableId,
+        limit: 5000,
+      });
+
+      // Optimistically update to the new value
+      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
+        if (!old) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            columns: page.columns.filter((c) => c.id !== columnId),
+            cells: page.cells.filter((c) => c.columnId !== columnId),
+          })),
+        };
+      });
+
+      return { previous };
+    },
+
+    onError: (_err, { columnId }, ctx) => {
+      // Rollback on error
+      if (ctx?.previous) {
+        utils.table.getData.setInfiniteData(
+          { tableId, limit: 5000 },
+          ctx.previous,
+        );
+      }
+    },
+
     onSuccess: () => {
-      void utils.table.getData.invalidate({ tableId });
-      onClose();
+      // ✅ REMOVE onSettled and just invalidate once on success
+      // This ensures the server state is eventually consistent
+      void utils.table.getData.invalidate({ tableId, limit: 5000 });
     },
   });
-
   useEffect(() => {
     if (!anchorRef.current || !menuRef.current) return;
 
@@ -229,6 +266,7 @@ export default function ColumnHeaderMenu({
       </button>
 
       <button
+        disabled={deleteColumn.isPending}
         onClick={() => void deleteColumn.mutate({ columnId })}
         className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
       >
