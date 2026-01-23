@@ -65,7 +65,7 @@ export function useTableEditing({
       }
       return prev;
     });
-  }, []);
+  }, [setEditing]);
 
   // ✅ NEW: Function to update the editing columnId when temp column ID is replaced
   const updateEditingColumnId = useCallback(
@@ -80,7 +80,7 @@ export function useTableEditing({
         return prev;
       });
     },
-    [],
+    [setEditing],
   );
 
   const commitEdit = () => {
@@ -130,7 +130,7 @@ export function useTableEditing({
       const queueKey = isTempRow ? rowId : `col:${columnId}`;
 
       if (pendingEditsRef) {
-        const existing = pendingEditsRef.current.get(queueKey) || [];
+        const existing = pendingEditsRef.current.get(queueKey) ?? [];
 
         const editEntry = {
           columnId,
