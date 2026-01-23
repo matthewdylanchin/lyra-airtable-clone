@@ -35,8 +35,15 @@ export default function AppTopBar() {
         </div>
 
         {/* Right: actions */}
+        {/* Right: actions */}
         <div className="flex items-center gap-2">
-          {showSpinner && <TableLoadingIndicator isLoading />}
+          <div className="relative top-[0.5px] flex h-6 w-6 items-center justify-center">
+            <TableLoadingIndicator
+              isLoading={isBusy}
+              className="transition-opacity duration-150"
+            />
+          </div>
+
           <button className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50">
             <SquareMousePointer className="h-5 w-5 text-zinc-600" />
             <span>Launch</span>
