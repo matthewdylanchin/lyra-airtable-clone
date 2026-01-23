@@ -8,7 +8,11 @@ import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 import SortPanel from "./Components/SortPanel";
 import { useTableData } from "./hooks/useTableData";
-import type { PendingEditsMap } from "./hooks/useTableEditing";
+import {
+  useTableEditing,
+  type PendingEditsMap,
+  type PendingEdit,
+} from "./hooks/useTableEditing"; // ✅ Import type
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -23,7 +27,6 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
-import { EditingProvider, useEditingContext } from "./EditingContext";
 
 type ColumnType = {
   id: string;
@@ -47,162 +50,6 @@ type TableDataType = {
   totalCount: number;
   nextCursor: number | undefined;
 };
-
-// Inner component that uses the editing context
-function TableClientInner({
-  data,
-  tableData,
-  tableDataWithPending,
-  cellByKey,
-  upsert,
-  pendingEditsRef,
-  queryKey,
-  selectedCell,
-  setSelectedCell,
-  searchQuery,
-  currentMatch,
-  filteredColumnIds,
-  sortedColumnIds,
-  setAddColumnOpen,
-  columnSizing,
-  setColumnSizing,
-  tableContainerRef,
-  rowVirtualizer,
-  isFetchingNextPage,
-  isFetchingMultiple,
-  isLoadingJump,
-  addColumnOpen,
-  flushPendingEdits,
-  flushPendingColumnEdits,
-}: {
-  data: TableDataType;
-  tableData: any[];
-  tableDataWithPending: any[];
-  cellByKey: Map<string, any>;
-  upsert: any;
-  pendingEditsRef: React.MutableRefObject<PendingEditsMap>;
-  queryKey: any;
-  selectedCell: SelectedCell;
-  setSelectedCell: (v: SelectedCell) => void;
-  searchQuery: string;
-  currentMatch: any;
-  filteredColumnIds: Set<string>;
-  sortedColumnIds: Set<string>;
-  setAddColumnOpen: (v: AddColumnState) => void;
-  columnSizing: ColumnSizingState;
-  setColumnSizing: (v: ColumnSizingState) => void;
-  tableContainerRef: React.RefObject<HTMLDivElement | null>;
-  rowVirtualizer: any;
-  isFetchingNextPage: boolean;
-  isFetchingMultiple: React.MutableRefObject<boolean>;
-  isLoadingJump: React.MutableRefObject<boolean>;
-  addColumnOpen: AddColumnState;
-  flushPendingEdits: (
-    tempId: string,
-    realId: string,
-    type?: "row" | "column",
-  ) => void;
-  flushPendingColumnEdits: (tempId: string, realId: string) => void;
-}) {
-  const {
-    startEdit,
-    editingCell: editing,
-    draft,
-    setDraft,
-    localError,
-  } = useEditingContext();
-
-  const columns = useMemo(
-    () =>
-      createColumns({
-        data,
-        selectedCell,
-        setSelectedCell,
-        startEdit,
-        onInsert: (insert, position) => {
-          setAddColumnOpen({ insert, position });
-        },
-        searchQuery,
-        currentMatch,
-        filteredColumnIds,
-        sortedColumnIds,
-      }),
-    [
-      data,
-      selectedCell,
-      setSelectedCell,
-      startEdit,
-      searchQuery,
-      currentMatch,
-      filteredColumnIds,
-      sortedColumnIds,
-      setAddColumnOpen,
-    ],
-  );
-
-  const table = useReactTable({
-    data: tableDataWithPending,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    enableColumnResizing: true,
-    columnResizeMode: "onChange",
-    state: {
-      columnSizing,
-    },
-    onColumnSizingChange: (updaterOrValue) => {
-      setColumnSizing(
-        typeof updaterOrValue === "function"
-          ? updaterOrValue(columnSizing)
-          : updaterOrValue,
-      );
-    },
-    defaultColumn: {
-      size: 150,
-      minSize: 50,
-    },
-  });
-
-  useKeyboardNavigation({
-    table,
-    selectedCell,
-    setSelectedCell,
-    editing,
-    startEdit,
-    setDraft,
-  });
-
-  return (
-    <>
-      {(localError ?? upsert.error) && (
-        <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
-          {localError ?? upsert.error?.message}
-        </div>
-      )}
-
-      <div className="min-h-0 flex-1">
-        <TableView
-          table={table}
-          addColumnOpen={addColumnOpen}
-          onCloseAddColumn={() => setAddColumnOpen(null)}
-          focusedRowIndex={selectedCell?.rowIndex ?? null}
-          focusedColumnIndex={selectedCell?.colIndex ?? null}
-          rowVirtualizer={rowVirtualizer}
-          tableContainerRef={tableContainerRef}
-          isFetchingNextPage={
-            isFetchingNextPage ||
-            isFetchingMultiple.current ||
-            isLoadingJump.current
-          }
-          onOpenSearch={() => {}}
-          queryKey={queryKey}
-          onFlushPendingEdits={flushPendingEdits}
-          onFlushPendingColumnEdits={flushPendingColumnEdits}
-        />
-      </div>
-      <BottomBar rowCount={data.totalCount} />
-    </>
-  );
-}
 
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
@@ -254,6 +101,8 @@ export default function TableClient() {
   const [pendingUpdates, setPendingUpdates] = useState<Record<string, string>>(
     {},
   );
+
+  // ✅ NEW: Ref to store pending edits for temp rows
   const pendingEditsRef = useRef<PendingEditsMap>(new Map());
 
   const utils = api.useUtils();
@@ -329,11 +178,12 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
+      // ✅ UPDATED: Skip backend for temp IDs (let the queue handle it)
       if (
         variables.rowId.startsWith("temp-") ||
         variables.columnId.startsWith("temp-")
       ) {
-        return;
+        return; // Don't do anything for temp rows
       }
 
       await utils.table.getData.cancel(queryKey);
@@ -412,15 +262,53 @@ export default function TableClient() {
     });
   }, [tableData, pendingUpdates]);
 
-  // Flush pending edits functions - these will be passed to context
+  const commitEditSafe = () => {
+    void commitEdit();
+  };
+
+  const {
+    editing,
+    draft,
+    localError,
+    startEdit,
+    cancelEdit,
+    commitEdit,
+    setDraft,
+    updateEditingRowId,
+    updateEditingColumnId,
+  } = useTableEditing({
+    data,
+    cellByKey,
+    upsert,
+    pendingEditsRef, // ✅ NEW: Pass the ref
+    onCommit: (rowId, columnId, value) => {
+      setPendingUpdates((prev) => ({
+        ...prev,
+        [`${rowId}:${columnId}`]: value,
+      }));
+    },
+  });
+
+  // ✅ NEW: Function to flush pending edits when temp ID is replaced with real ID
   const flushPendingEdits = useCallback(
     (tempId: string, realId: string, type: "row" | "column" = "row") => {
-      // This will be called from EditingContext
       if (type === "row") {
+        // Existing row logic
+        updateEditingRowId(tempId, realId);
+
         const pendingEdits = pendingEditsRef.current.get(tempId);
 
         if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} row edits for ${tempId} → ${realId}`,
+          );
+
           pendingEdits.forEach((edit) => {
+            console.log(`  📤 Sending edit:`, {
+              realId,
+              columnId: edit.columnId,
+            });
+
             upsert.mutate({
               rowId: realId,
               columnId: edit.columnId,
@@ -432,6 +320,7 @@ export default function TableClient() {
           pendingEditsRef.current.delete(tempId);
         }
 
+        // Update pendingUpdates keys from temp to real
         setPendingUpdates((prev) => {
           const next: Record<string, string> = {};
 
@@ -447,13 +336,25 @@ export default function TableClient() {
           return next;
         });
       } else {
+        // ✅ Column logic
+        updateEditingColumnId(tempId, realId);
+
         const queueKey = `col:${tempId}`;
         const pendingEdits = pendingEditsRef.current.get(queueKey);
 
         if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} column edits for ${tempId} → ${realId}`,
+          );
+
           pendingEdits.forEach((edit) => {
             const rowId = edit.rowId;
             if (!rowId) return;
+
+            console.log(`  📤 Sending edit:`, {
+              rowId,
+              columnId: realId,
+            });
 
             upsert.mutate({
               rowId,
@@ -466,6 +367,7 @@ export default function TableClient() {
           pendingEditsRef.current.delete(queueKey);
         }
 
+        // Update pendingUpdates keys from temp column to real
         setPendingUpdates((prev) => {
           const next: Record<string, string> = {};
 
@@ -482,7 +384,7 @@ export default function TableClient() {
         });
       }
     },
-    [upsert],
+    [upsert, updateEditingRowId, updateEditingColumnId],
   );
 
   const flushPendingColumnEdits = useCallback(
@@ -559,6 +461,62 @@ export default function TableClient() {
     return new Set(sorts.map((s) => s.columnId));
   }, [sorts]);
 
+  const columns = useMemo(
+    () =>
+      createColumns({
+        data,
+        editing,
+        draft,
+        selectedCell,
+        setSelectedCell,
+        startEdit,
+        commitEdit: commitEditSafe,
+        cancelEdit,
+        setDraft,
+        onInsert: (
+          insert: ColumnInsertPosition,
+          position: { top: number; left: number },
+        ) => {
+          setAddColumnOpen({ insert, position });
+        },
+        upsert,
+        searchQuery,
+        currentMatch,
+        filteredColumnIds,
+        sortedColumnIds,
+      }),
+    [
+      data,
+      editing,
+      draft,
+      selectedCell,
+      startEdit,
+      cancelEdit,
+      setDraft,
+      upsert,
+      searchQuery,
+      currentMatch,
+      filteredColumnIds,
+      sortedColumnIds,
+    ],
+  );
+
+  const table = useReactTable({
+    data: tableDataWithPending,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    enableColumnResizing: true,
+    columnResizeMode: "onChange",
+    state: {
+      columnSizing,
+    },
+    onColumnSizingChange: setColumnSizing,
+    defaultColumn: {
+      size: 150,
+      minSize: 50,
+    },
+  });
+
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -568,9 +526,17 @@ export default function TableClient() {
     overscan: 150,
   });
 
+  const timeoutIds = useRef<NodeJS.Timeout[]>([]);
+
+  useEffect(() => {
+    return () => {
+      timeoutIds.current.forEach((id) => clearTimeout(id));
+      timeoutIds.current = [];
+    };
+  }, []);
+
   const lastScrollTop = useRef(0);
   const isLoadingJump = useRef(false);
-  const isFetchingMultiple = useRef(false);
 
   const handleJumpFetch = useCallback(
     async (pagesToFetch: number) => {
@@ -611,6 +577,7 @@ export default function TableClient() {
           const pagesNeeded = Math.ceil(rowsNeeded / 5000);
           const pagesToFetch = Math.min(pagesNeeded + 1, 5);
 
+          console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
           void handleJumpFetch(pagesToFetch);
         }
       }
@@ -621,6 +588,8 @@ export default function TableClient() {
     container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
   }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
+
+  const isFetchingMultiple = useRef(false);
 
   const handleEmergencyFetch = useCallback(async () => {
     isFetchingMultiple.current = true;
@@ -649,6 +618,7 @@ export default function TableClient() {
 
     if (remainingBuffer < 8000 && hasNextPage && !isFetchingNextPage) {
       if (remainingBuffer < 1500) {
+        console.log("🔥 EMERGENCY: Fetching multiple pages!");
         void handleEmergencyFetch();
       } else {
         void fetchNextPage();
@@ -675,8 +645,16 @@ export default function TableClient() {
     }
   }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const isBusy =
-    isLoading || isFetchingNextPage || upsert.isPending || isFetching;
+  useKeyboardNavigation({
+    table,
+    selectedCell,
+    setSelectedCell,
+    editing,
+    startEdit,
+    setDraft,
+  });
+
+  const isBusy = isLoading || isFetchingNextPage || upsert.isPending || isFetching;
 
   useEffect(() => {
     setIsBusy(isBusy);
@@ -719,82 +697,70 @@ export default function TableClient() {
   }
 
   return (
-    <EditingProvider
-      data={data}
-      cellByKey={cellByKey}
-      upsert={upsert}
-      pendingEditsRef={pendingEditsRef}
-      onCommit={(rowId, columnId, value) => {
-        setPendingUpdates((prev) => ({
-          ...prev,
-          [`${rowId}:${columnId}`]: value,
-        }));
-      }}
-    >
-      <div className="flex h-full flex-col">
-        <SearchBar
-          isOpen={searchBarOpen}
-          onClose={() => {
-            setSearchBarOpen(false);
-            setSearchQuery("");
-            setCurrentMatchIndex(0);
-          }}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          totalResults={matchingCells.length}
-          currentResultIndex={currentMatchIndex}
-          onNextResult={goToNextMatch}
-          onPreviousResult={goToPreviousMatch}
-          searchButtonRef={searchButtonRef}
-        />
+    <div className="flex h-full flex-col">
+      <SearchBar
+        isOpen={searchBarOpen}
+        onClose={() => {
+          setSearchBarOpen(false);
+          setSearchQuery("");
+          setCurrentMatchIndex(0);
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        totalResults={matchingCells.length}
+        currentResultIndex={currentMatchIndex}
+        onNextResult={goToNextMatch}
+        onPreviousResult={goToPreviousMatch}
+        searchButtonRef={searchButtonRef}
+      />
 
-        <FilterPanel
-          isOpen={filterPanelOpen}
-          onClose={() => setFilterPanelOpen(false)}
-          columns={data?.columns ?? []}
-          filters={filters}
-          onChange={setFilters}
-          triggerRef={filterButtonRef ?? undefined}
-          conjunctionMode={filterConjunction}
-          onConjunctionModeChange={setFilterConjunction}
-        />
+      {(localError ?? upsert.error) && (
+        <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-6 py-3 text-sm text-red-600">
+          {localError ?? upsert.error?.message}
+        </div>
+      )}
 
-        <SortPanel
-          isOpen={sortPanelOpen}
-          onClose={() => setSortPanelOpen(false)}
-          columns={data?.columns ?? []}
-          sorts={sorts}
-          onChange={setSorts}
-          triggerRef={sortButtonRef ?? undefined}
-        />
+      <FilterPanel
+        isOpen={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        columns={data?.columns ?? []}
+        filters={filters}
+        onChange={setFilters}
+        triggerRef={filterButtonRef ?? undefined}
+        conjunctionMode={filterConjunction}
+        onConjunctionModeChange={setFilterConjunction}
+      />
 
-        <TableClientInner
-          data={data}
-          tableData={tableData}
-          tableDataWithPending={tableDataWithPending}
-          cellByKey={cellByKey}
-          upsert={upsert}
-          pendingEditsRef={pendingEditsRef}
-          queryKey={queryKey}
-          selectedCell={selectedCell}
-          setSelectedCell={setSelectedCell}
-          searchQuery={searchQuery}
-          currentMatch={currentMatch}
-          filteredColumnIds={filteredColumnIds}
-          sortedColumnIds={sortedColumnIds}
-          setAddColumnOpen={setAddColumnOpen}
-          columnSizing={columnSizing}
-          setColumnSizing={setColumnSizing}
-          tableContainerRef={tableContainerRef}
-          rowVirtualizer={rowVirtualizer}
-          isFetchingNextPage={isFetchingNextPage}
-          isFetchingMultiple={isFetchingMultiple}
-          isLoadingJump={isLoadingJump}
+      <SortPanel
+        isOpen={sortPanelOpen}
+        onClose={() => setSortPanelOpen(false)}
+        columns={data?.columns ?? []}
+        sorts={sorts}
+        onChange={setSorts}
+        triggerRef={sortButtonRef ?? undefined}
+      />
+
+      <div className="min-h-0 flex-1">
+        <TableView
+          table={table}
           addColumnOpen={addColumnOpen}
-          flushPendingEdits={flushPendingEdits}
-          flushPendingColumnEdits={flushPendingColumnEdits}
+          onCloseAddColumn={() => setAddColumnOpen(null)}
+          focusedRowIndex={selectedCell?.rowIndex ?? null}
+          focusedColumnIndex={selectedCell?.colIndex ?? null}
+          rowVirtualizer={rowVirtualizer}
+          tableContainerRef={tableContainerRef}
+          isFetchingNextPage={
+            isFetchingNextPage ||
+            isFetchingMultiple.current ||
+            isLoadingJump.current
+          }
+          onOpenSearch={() => setSearchBarOpen(true)}
+          queryKey={queryKey}
+          onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
+          onFlushPendingColumnEdits={flushPendingColumnEdits} // ✅ NEW
         />
       </div>
-    </EditingProvider>
+      <BottomBar rowCount={data.totalCount} />
+    </div>
   );
 }

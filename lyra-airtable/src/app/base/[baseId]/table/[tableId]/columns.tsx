@@ -1,10 +1,19 @@
 import type { ColumnDef, CellContext } from "@tanstack/react-table";
-import type { TableData, TableRow, CellValue, SelectedCell } from "./types";
+import type {
+  TableData,
+  TableRow,
+  CellValue,
+  Editing,
+  SelectedCell,
+} from "./types";
 import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
 import type { ColumnInsertPosition } from "./types";
-import { EditableCell } from "./EditableCell";
+import type { CellUpsertMutation } from "./types";
 
+/**
+ * Helper function to estimate appropriate column width based on column type and name
+ */
 function getColumnWidth(columnName: string, columnType?: string): number {
   const name = columnName.toLowerCase();
 
@@ -68,16 +77,24 @@ function getColumnWidth(columnName: string, columnType?: string): number {
 
 export function createColumns({
   data,
+  editing,
+  draft,
   selectedCell,
   setSelectedCell,
   startEdit,
+  commitEdit,
+  cancelEdit,
+  setDraft,
   onInsert,
+  upsert,
   searchQuery,
   currentMatch,
   filteredColumnIds,
   sortedColumnIds,
 }: {
   data: TableData | undefined;
+  editing: Editing;
+  draft: string;
   selectedCell: SelectedCell;
   setSelectedCell: (v: SelectedCell) => void;
   startEdit: (
@@ -85,10 +102,14 @@ export function createColumns({
     columnId: string,
     mode?: "replace" | "append",
   ) => void;
+  commitEdit: () => void;
+  cancelEdit: () => void;
+  setDraft: (v: string) => void;
   onInsert: (
     insert: ColumnInsertPosition,
     position: { top: number; left: number },
   ) => void;
+  upsert: CellUpsertMutation;
   searchQuery?: string;
   currentMatch?: {
     rowId: string;
@@ -108,6 +129,7 @@ export function createColumns({
       size: 60,
       minSize: 50,
       cell: (info) => {
+        // Check if this row has any matching cells
         const hasMatch =
           searchQuery &&
           data.columns.some((col) => {
@@ -126,7 +148,10 @@ export function createColumns({
               "flex items-center justify-center text-sm text-gray-600",
               hasMatch && "bg-amber-100 font-semibold",
             )}
-            style={{ height: "35px", width: "100%" }}
+            style={{
+              height: "35px",
+              width: "100%",
+            }}
           >
             {info.row.index + 1}
           </div>
@@ -135,6 +160,7 @@ export function createColumns({
     },
 
     ...data.columns.map((c) => {
+      // Check if this column is filtered or sorted
       const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
       const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
 
@@ -143,7 +169,13 @@ export function createColumns({
         accessorFn: (row: TableRow) => row[c.id] ?? null,
         size: getColumnWidth(c.name, c.type),
         minSize: 50,
-        meta: { id: c.id, name: c.name, type: c.type },
+
+        meta: {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+        },
+
         header: () => (
           <ColumnHeader
             column={{ id: c.id, name: c.name, type: c.type }}
@@ -161,33 +193,99 @@ export function createColumns({
             selectedCell?.rowIndex === rowIndex &&
             selectedCell?.colIndex === colIndex;
 
+          const isEditing =
+            editing?.rowId === rowId && editing?.columnId === c.id;
+
+          const isNumberCol = c.type === "NUMBER";
+
+          const isPending =
+            upsert.isPending &&
+            upsert.variables?.rowId === rowId &&
+            upsert.variables?.columnId === c.id;
+
+          // Check if this cell matches the search query
           const cellValueStr = value != null ? String(value) : "";
           const searchLower = searchQuery?.toLowerCase() ?? "";
           const cellLower = cellValueStr.toLowerCase();
 
           const isMatch =
             searchQuery && cellValueStr && cellLower.includes(searchLower);
+
+          // Check if this is the CURRENT focused match (dark amber)
           const isCurrentMatch =
             isMatch &&
             currentMatch?.rowId === rowId &&
             currentMatch?.columnId === c.id;
 
           return (
-            <EditableCell
-              rowId={rowId}
-              columnId={c.id}
-              value={value}
-              rowIndex={rowIndex}
-              colIndex={colIndex}
-              isSelected={isSelected}
-              isNumberCol={c.type === "NUMBER"}
-              isFilteredColumn={isFilteredColumn}
-              isSortedColumn={isSortedColumn}
-              isMatch={!!isMatch}
-              isCurrentMatch={!!isCurrentMatch}
-              onSelect={() => setSelectedCell({ rowIndex, colIndex })}
-              onStartEdit={() => startEdit(rowId, c.id, "append")}
-            />
+            <div
+              className={cn(
+                "relative flex h-9 w-full cursor-default items-center outline-none",
+                isSelected && "ring-2 ring-blue-600 ring-inset",
+                !isEditing && "hover:bg-zinc-50",
+                // Column highlighting priority: filter (green) > sort (orange)
+                // If filtered, use green regardless of sort state
+                isFilteredColumn && "bg-emerald-50",
+                // If sorted but NOT filtered, use orange
+                isSortedColumn && !isFilteredColumn && "bg-orange-50",
+                // Search highlighting (highest priority)
+                isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
+                isMatch &&
+                  !isCurrentMatch &&
+                  "border-l-2 border-amber-100 bg-amber-100",
+              )}
+              onClick={() => setSelectedCell({ rowIndex, colIndex })}
+              onDoubleClick={() => startEdit(rowId, c.id, "append")}
+            >
+              {isEditing ? (
+                <input
+                  key={`edit-${rowIndex}-${c.id}`}
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => {
+                    const val = e.target.value;
+
+                    if (isNumberCol) {
+                      if (/^-?\d*\.?\d*$/.test(val)) {
+                        setDraft(val);
+                      }
+                      return;
+                    }
+
+                    setDraft(val);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      commitEdit();
+                      return;
+                    }
+
+                    if (e.key === "Tab") {
+                      e.preventDefault();
+                      commitEdit();
+                      return;
+                    }
+
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelEdit();
+                      return;
+                    }
+                  }}
+                  onBlur={() => {
+                    commitEdit();
+                  }}
+                  className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+                  style={{ boxShadow: "none" }}
+                />
+              ) : (
+                <span className="block truncate px-2.5 text-sm">
+                  {String(value ?? "")}
+                </span>
+              )}
+            </div>
           );
         },
       };
