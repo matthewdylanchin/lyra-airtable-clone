@@ -42,6 +42,9 @@ type TableQueryData = {
   pageParams: unknown[];
   pages: TablePage[];
 };
+
+type TableQueryKey = [["table", "getData"], { input: { tableId: string } }];
+
 export default function ColumnHeaderMenu({
   columnId,
   tableId,
@@ -67,15 +70,26 @@ export default function ColumnHeaderMenu({
       // Find ALL queries that match this table
       const allQueries = queryClient.getQueryCache().findAll({
         predicate: (query) => {
-          const key = query.queryKey as any[];
-          return (
-            key[0]?.[0] === "table" &&
-            key[0]?.[1] === "getData" &&
-            key[1]?.input?.tableId === tableId
-          );
+          const key = query.queryKey;
+
+          if (
+            !Array.isArray(key) ||
+            key.length !== 2 ||
+            !Array.isArray(key[0]) ||
+            key[0][0] !== "table" ||
+            key[0][1] !== "getData" ||
+            typeof key[1] !== "object" ||
+            key[1] === null ||
+            !("input" in key[1]) ||
+            typeof (key[1] as any).input?.tableId !== "string"
+          ) {
+            return false;
+          }
+
+          const typedKey = key as TableQueryKey;
+          return typedKey[1].input.tableId === tableId;
         },
       });
-
       console.log(`🔄 Updating ${allQueries.length} queries`);
 
       // Update each query's data optimistically
