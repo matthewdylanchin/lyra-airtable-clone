@@ -57,7 +57,7 @@ export function useTableEditing({
   // ✅ NEW: Function to update the editing rowId when temp ID is replaced
   const updateEditingRowId = useCallback((tempId: string, realId: string) => {
     setEditing((prev) => {
-      if (prev && prev.rowId === tempId) {
+      if (prev?.rowId === tempId) {
         console.log(
           `🔄 [updateEditingRowId] Updating editing state: ${tempId} → ${realId}`,
         );
@@ -65,13 +65,13 @@ export function useTableEditing({
       }
       return prev;
     });
-  }, [setEditing]);
+  }, []);
 
   // ✅ NEW: Function to update the editing columnId when temp column ID is replaced
   const updateEditingColumnId = useCallback(
     (tempId: string, realId: string) => {
       setEditing((prev) => {
-        if (prev && prev.columnId === tempId) {
+        if (prev?.columnId === tempId) {
           console.log(
             `🔄 [updateEditingColumnId] Updating editing state: ${tempId} → ${realId}`,
           );
@@ -80,7 +80,7 @@ export function useTableEditing({
         return prev;
       });
     },
-    [setEditing],
+    [],
   );
 
   const commitEdit = () => {
