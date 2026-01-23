@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "@/trpc/react";
 import type { ColumnInsertPosition } from "@/app/base/[baseId]/table/[tableId]/types";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ColumnHeaderMenuProps = {
   columnId: string;
@@ -47,50 +48,58 @@ export default function ColumnHeaderMenu({
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
   const utils = api.useUtils();
+  const queryClient = useQueryClient(); // ✅ Add this
+
   const deleteColumn = api.column.delete.useMutation({
     onMutate: async ({ columnId }) => {
-      // Cancel any outgoing refetches for this table
-      await utils.table.getData.cancel({ tableId, limit: 5000 });
+      // Cancel all outgoing refetches for this table
+      await utils.table.getData.cancel({ tableId });
 
-      // Snapshot the previous value
-      const previous = utils.table.getData.getInfiniteData({
-        tableId,
-        limit: 5000,
+      // Find ALL queries that match this table
+      const allQueries = queryClient.getQueryCache().findAll({
+        predicate: (query) => {
+          const key = query.queryKey as any[];
+          return (
+            key[0]?.[0] === "table" &&
+            key[0]?.[1] === "getData" &&
+            key[1]?.input?.tableId === tableId
+          );
+        },
       });
 
-      // Optimistically update to the new value
-      utils.table.getData.setInfiniteData({ tableId, limit: 5000 }, (old) => {
-        if (!old) return old;
+      console.log(`🔄 Updating ${allQueries.length} queries`);
 
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            columns: page.columns.filter((c) => c.id !== columnId),
-            cells: page.cells.filter((c) => c.columnId !== columnId),
-          })),
-        };
+      // Update each query's data optimistically
+      allQueries.forEach((query) => {
+        const data = query.state.data as any;
+        if (data?.pages) {
+          queryClient.setQueryData(query.queryKey, {
+            ...data,
+            pageParams: data.pageParams,
+            pages: data.pages.map((page: any) => ({
+              ...page,
+              columns: page.columns.filter((c: any) => c.id !== columnId),
+              cells: page.cells.filter((c: any) => c.columnId !== columnId),
+            })),
+          });
+        }
       });
 
-      return { previous };
+      return {};
     },
 
-    onError: (_err, { columnId }, ctx) => {
-      // Rollback on error
-      if (ctx?.previous) {
-        utils.table.getData.setInfiniteData(
-          { tableId, limit: 5000 },
-          ctx.previous,
-        );
-      }
+    onError: (err) => {
+      console.error("❌ Delete failed:", err);
+      // Refetch on error to restore correct state
+      void utils.table.getData.invalidate({ tableId });
     },
 
     onSuccess: () => {
-      // ✅ REMOVE onSettled and just invalidate once on success
-      // This ensures the server state is eventually consistent
-      void utils.table.getData.invalidate({ tableId, limit: 5000 });
+      console.log("✅ Column deleted successfully");
+      // Don't invalidate - trust the optimistic update
     },
   });
+
   useEffect(() => {
     if (!anchorRef.current || !menuRef.current) return;
 
