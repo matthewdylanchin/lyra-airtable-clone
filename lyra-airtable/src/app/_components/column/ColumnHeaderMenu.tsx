@@ -43,13 +43,11 @@ type TableQueryData = {
   pages: TablePage[];
 };
 
-type TableQueryKey = [["table", "getData"], { input: { tableId: string } }];
-
 export default function ColumnHeaderMenu({
   columnId,
   tableId,
   anchorRef,
-  columnHeaderRef,
+  columnHeaderRef: _columnHeaderRef, // ✅ Prefix with _ to mark as intentionally unused
   onClose,
   onRename,
   onInsert,
@@ -77,9 +75,9 @@ export default function ColumnHeaderMenu({
             return false;
           }
 
-          // ✅ Now we know key is an array with 2 elements, safe to destructure
-          const path = key[0];
-          const params = key[1];
+          // ✅ Access array elements directly and type-guard them
+          const path: unknown = key[0];
+          const params: unknown = key[1];
 
           // Check if path matches ["table", "getData"]
           if (
