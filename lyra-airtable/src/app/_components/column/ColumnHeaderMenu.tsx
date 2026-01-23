@@ -33,6 +33,15 @@ type ColumnHeaderMenuProps = {
   onInsert: (insert: ColumnInsertPosition) => void;
 };
 
+type TablePage = {
+  columns: { id: string }[];
+  cells: { columnId: string }[];
+};
+
+type TableQueryData = {
+  pageParams: unknown[];
+  pages: TablePage[];
+};
 export default function ColumnHeaderMenu({
   columnId,
   tableId,
@@ -71,18 +80,17 @@ export default function ColumnHeaderMenu({
 
       // Update each query's data optimistically
       allQueries.forEach((query) => {
-        const data = query.state.data as any;
-        if (data?.pages) {
-          queryClient.setQueryData(query.queryKey, {
-            ...data,
-            pageParams: data.pageParams,
-            pages: data.pages.map((page: any) => ({
-              ...page,
-              columns: page.columns.filter((c: any) => c.id !== columnId),
-              cells: page.cells.filter((c: any) => c.columnId !== columnId),
-            })),
-          });
-        }
+        const data = query.state.data as TableQueryData | undefined;
+        if (!data) return;
+
+        queryClient.setQueryData(query.queryKey, {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            columns: page.columns.filter((c) => c.id !== columnId),
+            cells: page.cells.filter((c) => c.columnId !== columnId),
+          })),
+        });
       });
 
       return {};
