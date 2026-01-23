@@ -8,7 +8,11 @@ import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 import SortPanel from "./Components/SortPanel";
 import { useTableData } from "./hooks/useTableData";
-import { useTableEditing } from "./hooks/useTableEditing";
+import {
+  useTableEditing,
+  type PendingEditsMap,
+  type PendingEdit,
+} from "./hooks/useTableEditing"; // ✅ Import type
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -23,7 +27,6 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
-import { TableLoadingIndicator } from "./Components/LoadingIndicator";
 
 type ColumnType = {
   id: string;
@@ -99,6 +102,9 @@ export default function TableClient() {
     {},
   );
 
+  // ✅ NEW: Ref to store pending edits for temp rows
+  const pendingEditsRef = useRef<PendingEditsMap>(new Map());
+
   const utils = api.useUtils();
 
   const queryKey = useMemo(
@@ -135,8 +141,6 @@ export default function TableClient() {
     setDataQueryKey(queryKey);
   }, [queryKey, setDataQueryKey]);
 
-  // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
-  // Or pass sorts without trying to determine type here
   const {
     data: infiniteData,
     fetchNextPage,
@@ -174,12 +178,12 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
+      // ✅ UPDATED: Skip backend for temp IDs (let the queue handle it)
       if (
         variables.rowId.startsWith("temp-") ||
         variables.columnId.startsWith("temp-")
       ) {
-        // Allow UI to update, but DO NOT hit backend
-        return;
+        return; // Don't do anything for temp rows
       }
 
       await utils.table.getData.cancel(queryKey);
@@ -270,10 +274,13 @@ export default function TableClient() {
     cancelEdit,
     commitEdit,
     setDraft,
+    updateEditingRowId,
+    updateEditingColumnId,
   } = useTableEditing({
     data,
     cellByKey,
     upsert,
+    pendingEditsRef, // ✅ NEW: Pass the ref
     onCommit: (rowId, columnId, value) => {
       setPendingUpdates((prev) => ({
         ...prev,
@@ -281,6 +288,111 @@ export default function TableClient() {
       }));
     },
   });
+
+  // ✅ NEW: Function to flush pending edits when temp ID is replaced with real ID
+  const flushPendingEdits = useCallback(
+    (tempId: string, realId: string, type: "row" | "column" = "row") => {
+      if (type === "row") {
+        // Existing row logic
+        updateEditingRowId(tempId, realId);
+
+        const pendingEdits = pendingEditsRef.current.get(tempId);
+
+        if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} row edits for ${tempId} → ${realId}`,
+          );
+
+          pendingEdits.forEach((edit) => {
+            console.log(`  📤 Sending edit:`, {
+              realId,
+              columnId: edit.columnId,
+            });
+
+            upsert.mutate({
+              rowId: realId,
+              columnId: edit.columnId,
+              textValue: edit.textValue,
+              numberValue: edit.numberValue,
+            });
+          });
+
+          pendingEditsRef.current.delete(tempId);
+        }
+
+        // Update pendingUpdates keys from temp to real
+        setPendingUpdates((prev) => {
+          const next: Record<string, string> = {};
+
+          Object.entries(prev).forEach(([key, value]) => {
+            if (key.startsWith(`${tempId}:`)) {
+              const columnId = key.split(":")[1];
+              next[`${realId}:${columnId}`] = value;
+            } else {
+              next[key] = value;
+            }
+          });
+
+          return next;
+        });
+      } else {
+        // ✅ Column logic
+        updateEditingColumnId(tempId, realId);
+
+        const queueKey = `col:${tempId}`;
+        const pendingEdits = pendingEditsRef.current.get(queueKey);
+
+        if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} column edits for ${tempId} → ${realId}`,
+          );
+
+          pendingEdits.forEach((edit) => {
+            const rowId = edit.rowId;
+            if (!rowId) return;
+
+            console.log(`  📤 Sending edit:`, {
+              rowId,
+              columnId: realId,
+            });
+
+            upsert.mutate({
+              rowId,
+              columnId: realId,
+              textValue: edit.textValue,
+              numberValue: edit.numberValue,
+            });
+          });
+
+          pendingEditsRef.current.delete(queueKey);
+        }
+
+        // Update pendingUpdates keys from temp column to real
+        setPendingUpdates((prev) => {
+          const next: Record<string, string> = {};
+
+          Object.entries(prev).forEach(([key, value]) => {
+            if (key.endsWith(`:${tempId}`)) {
+              const rowId = key.split(":")[0];
+              next[`${rowId}:${realId}`] = value;
+            } else {
+              next[key] = value;
+            }
+          });
+
+          return next;
+        });
+      }
+    },
+    [upsert, updateEditingRowId, updateEditingColumnId],
+  );
+
+  const flushPendingColumnEdits = useCallback(
+    (tempId: string, realId: string) => {
+      flushPendingEdits(tempId, realId, "column");
+    },
+    [flushPendingEdits],
+  );
 
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
@@ -542,6 +654,12 @@ export default function TableClient() {
     setDraft,
   });
 
+  const isBusy = isLoading || isFetchingNextPage || upsert.isPending || isFetching;
+
+  useEffect(() => {
+    setIsBusy(isBusy);
+  }, [isBusy, setIsBusy]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -553,25 +671,6 @@ export default function TableClient() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
-
-  useEffect(() => {
-    setIsBusy(
-      isLoading ||
-      isFetching ||
-        isFetchingNextPage ||
-        isFetchingMultiple.current ||
-        isLoadingJump.current ||
-        upsert.isPending,
-    );
-  }, [
-    isLoading,
-    isFetching,
-    isFetchingNextPage,
-    isFetchingMultiple.current,
-    isLoadingJump.current,
-    upsert.isPending,
-    setIsBusy,
-  ]);
 
   if (isLoading) {
     return (
@@ -596,12 +695,6 @@ export default function TableClient() {
       </div>
     );
   }
-
-  const isBusy =
-    isLoading ||
-    isFetchingNextPage ||
-    isFetchingMultiple.current ||
-    isLoadingJump.current;
 
   return (
     <div className="flex h-full flex-col">
@@ -663,6 +756,8 @@ export default function TableClient() {
           }
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
+          onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
+          onFlushPendingColumnEdits={flushPendingColumnEdits} // ✅ NEW
         />
       </div>
       <BottomBar rowCount={data.totalCount} />

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { api } from "@/trpc/react";
 import type { ColumnInsertPosition } from "@/app/base/[baseId]/table/[tableId]/types";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ColumnHeaderMenuProps = {
   columnId: string;
@@ -32,11 +33,21 @@ type ColumnHeaderMenuProps = {
   onInsert: (insert: ColumnInsertPosition) => void;
 };
 
+type TablePage = {
+  columns: { id: string }[];
+  cells: { columnId: string }[];
+};
+
+type TableQueryData = {
+  pageParams: unknown[];
+  pages: TablePage[];
+};
+
 export default function ColumnHeaderMenu({
   columnId,
   tableId,
   anchorRef,
-  columnHeaderRef,
+  columnHeaderRef: _columnHeaderRef, // ✅ Prefix with _ to mark as intentionally unused
   onClose,
   onRename,
   onInsert,
@@ -47,10 +58,92 @@ export default function ColumnHeaderMenu({
   const [coords, setCoords] = useState({ top: 0, left: 0 });
 
   const utils = api.useUtils();
+  const queryClient = useQueryClient();
+
   const deleteColumn = api.column.delete.useMutation({
-    onSuccess: () => {
+    onMutate: async ({ columnId }) => {
+      // Cancel all outgoing refetches for this table
+      await utils.table.getData.cancel({ tableId });
+
+      // Find ALL queries that match this table
+      const allQueries = queryClient.getQueryCache().findAll({
+        predicate: (query) => {
+          const key = query.queryKey;
+
+          // Type guard to check if this is a valid table query key
+          if (!Array.isArray(key) || key.length !== 2) {
+            return false;
+          }
+
+          // ✅ Access array elements directly and type-guard them
+          const path: unknown = key[0];
+          const params: unknown = key[1];
+
+          // Check if path matches ["table", "getData"]
+          if (
+            !Array.isArray(path) ||
+            path.length !== 2 ||
+            path[0] !== "table" ||
+            path[1] !== "getData"
+          ) {
+            return false;
+          }
+
+          // Type guard for params object
+          if (
+            typeof params !== "object" ||
+            params === null ||
+            !("input" in params)
+          ) {
+            return false;
+          }
+
+          // Now we can safely access input
+          const input = (params as { input: unknown }).input;
+
+          // Check if input has tableId
+          if (
+            typeof input !== "object" ||
+            input === null ||
+            !("tableId" in input)
+          ) {
+            return false;
+          }
+
+          // Final check for tableId match
+          return (input as { tableId: string }).tableId === tableId;
+        },
+      });
+
+      console.log(`🔄 Updating ${allQueries.length} queries`);
+
+      // Update each query's data optimistically
+      allQueries.forEach((query) => {
+        const data = query.state.data as TableQueryData | undefined;
+        if (!data) return;
+
+        queryClient.setQueryData(query.queryKey, {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            columns: page.columns.filter((c) => c.id !== columnId),
+            cells: page.cells.filter((c) => c.columnId !== columnId),
+          })),
+        });
+      });
+
+      return {};
+    },
+
+    onError: (err) => {
+      console.error("❌ Delete failed:", err);
+      // Refetch on error to restore correct state
       void utils.table.getData.invalidate({ tableId });
-      onClose();
+    },
+
+    onSuccess: () => {
+      console.log("✅ Column deleted successfully");
+      // Don't invalidate - trust the optimistic update
     },
   });
 
@@ -229,6 +322,7 @@ export default function ColumnHeaderMenu({
       </button>
 
       <button
+        disabled={deleteColumn.isPending}
         onClick={() => void deleteColumn.mutate({ columnId })}
         className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
       >

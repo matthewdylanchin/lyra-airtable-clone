@@ -9,11 +9,16 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   const [name, setName] = useState("Table 1");
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const creatingRef = useRef(false);
+  const utils = api.useUtils();
 
   const create = api.table.create.useMutation({
     onSuccess: async () => {
       setOpen(false);
+      setName("");
       setNameError(null);
+
+      await utils.table.listByBase.invalidate();
       // ...
     },
     onError: (err) => {
@@ -113,7 +118,19 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
             <button
               type="button"
               disabled={create.isPending || name.trim().length === 0}
-              onClick={() => create.mutate({ baseId, name: name.trim() })}
+              onClick={() => {
+                if (creatingRef.current) return;
+                creatingRef.current = true;
+
+                create.mutate(
+                  { baseId, name: name.trim() },
+                  {
+                    onSettled: () => {
+                      creatingRef.current = false;
+                    },
+                  },
+                );
+              }}
               className="h-9 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
             >
               {create.isPending ? "Creating…" : "Create"}

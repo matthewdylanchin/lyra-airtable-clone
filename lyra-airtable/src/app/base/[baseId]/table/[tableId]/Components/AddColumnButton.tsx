@@ -157,6 +157,7 @@ export default function AddColumnButton({
   initialPosition,
   queryKey,
   className,
+  onFlushPendingColumnEdits,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
@@ -181,6 +182,7 @@ export default function AddColumnButton({
     }[];
   };
   className?: string;
+  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void; // ✅ NEW
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -205,6 +207,14 @@ export default function AddColumnButton({
   }, []);
 
   function replaceTempColumnId(tempId: string, realId: string) {
+    console.log(`🔄 [replaceTempColumnId] ${tempId} → ${realId}`);
+
+    // ✅ IMPORTANT: Flush pending edits FIRST (this updates editing.columnId)
+    if (onFlushPendingColumnEdits) {
+      onFlushPendingColumnEdits(tempId, realId);
+    }
+
+    // ✅ THEN update the cache
     utils.table.getData.setInfiniteData(queryKey, (old) => {
       if (!old) return old;
 
@@ -222,6 +232,7 @@ export default function AddColumnButton({
       };
     });
   }
+
   // ⚡ OPTIMISTIC: Create column
   const createColumn = api.column.create.useMutation({
     onMutate: async (variables) => {

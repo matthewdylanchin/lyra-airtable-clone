@@ -239,6 +239,7 @@ export function createColumns({
             >
               {isEditing ? (
                 <input
+                  key={`edit-${rowIndex}-${c.id}`}
                   autoFocus
                   value={draft}
                   onChange={(e) => {

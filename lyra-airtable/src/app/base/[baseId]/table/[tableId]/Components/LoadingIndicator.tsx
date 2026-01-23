@@ -1,4 +1,10 @@
-export function TableLoadingIndicator({ isLoading }: { isLoading: boolean }) {
+export function TableLoadingIndicator({
+  isLoading,
+  className = "",
+}: {
+  isLoading: boolean;
+  className?: string;
+}) {
   if (!isLoading) return null;
 
   return (
@@ -19,7 +25,7 @@ export function TableLoadingIndicator({ isLoading }: { isLoading: boolean }) {
           d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"
         />
       </svg>
-      Saving…
+      Saving
     </div>
   );
 }

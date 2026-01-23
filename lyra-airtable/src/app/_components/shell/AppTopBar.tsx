@@ -2,9 +2,19 @@
 import { TableLoadingIndicator } from "@/app/base/[baseId]/table/[tableId]/Components/LoadingIndicator";
 import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewContext";
 import { ChevronDown, SquareMousePointer } from "lucide-react";
-
+import { useState, useEffect } from "react";
 export default function AppTopBar() {
   const { isBusy } = useTableView();
+
+  const [showSpinner, setShowSpinner] = useState(false);
+
+  useEffect(() => {
+    if (isBusy) {
+      const t = setTimeout(() => setShowSpinner(true), 150);
+      return () => clearTimeout(t);
+    }
+    setShowSpinner(false);
+  }, [isBusy]);
   return (
     <div className="h-[44px] border-b border-zinc-200 bg-white">
       <div className="mx-auto flex h-full items-center justify-between px-3">
@@ -26,7 +36,7 @@ export default function AppTopBar() {
 
         {/* Right: actions */}
         <div className="flex items-center gap-2">
-          <TableLoadingIndicator isLoading={isBusy} />
+          {showSpinner && <TableLoadingIndicator isLoading />}
           <button className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50">
             <SquareMousePointer className="h-5 w-5 text-zinc-600" />
             <span>Launch</span>
