@@ -77,7 +77,9 @@ export default function ColumnHeaderMenu({
             return false;
           }
 
-          const [path, params] = key;
+          // ✅ Now we know key is an array with 2 elements, safe to destructure
+          const path = key[0];
+          const params = key[1];
 
           // Check if path matches ["table", "getData"]
           if (
