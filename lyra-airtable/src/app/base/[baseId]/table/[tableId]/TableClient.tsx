@@ -8,7 +8,7 @@ import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 import SortPanel from "./Components/SortPanel";
 import { useTableData } from "./hooks/useTableData";
-import { useTableEditing } from "./hooks/useTableEditing";
+import { useTableEditing, type PendingEditsMap } from "./hooks/useTableEditing"; // ✅ Import type
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -98,6 +98,9 @@ export default function TableClient() {
     {},
   );
 
+  // ✅ NEW: Ref to store pending edits for temp rows
+  const pendingEditsRef = useRef<PendingEditsMap>(new Map());
+
   const utils = api.useUtils();
 
   const queryKey = useMemo(
@@ -134,8 +137,6 @@ export default function TableClient() {
     setDataQueryKey(queryKey);
   }, [queryKey, setDataQueryKey]);
 
-  // ✅ FIX: Don't pass sorts to the query - we'll handle sorting on the client side after data is loaded
-  // Or pass sorts without trying to determine type here
   const {
     data: infiniteData,
     fetchNextPage,
@@ -173,12 +174,12 @@ export default function TableClient() {
 
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
+      // ✅ UPDATED: Skip backend for temp IDs (let the queue handle it)
       if (
         variables.rowId.startsWith("temp-") ||
         variables.columnId.startsWith("temp-")
       ) {
-        // Allow UI to update, but DO NOT hit backend
-        return;
+        return; // Don't do anything for temp rows
       }
 
       await utils.table.getData.cancel(queryKey);
@@ -269,10 +270,12 @@ export default function TableClient() {
     cancelEdit,
     commitEdit,
     setDraft,
+    updateEditingRowId,
   } = useTableEditing({
     data,
     cellByKey,
     upsert,
+    pendingEditsRef, // ✅ NEW: Pass the ref
     onCommit: (rowId, columnId, value) => {
       setPendingUpdates((prev) => ({
         ...prev,
@@ -280,6 +283,52 @@ export default function TableClient() {
       }));
     },
   });
+
+  // ✅ NEW: Function to flush pending edits when temp ID is replaced with real ID
+  const flushPendingEdits = useCallback(
+    (tempId: string, realId: string) => {
+      // ✅ NEW: Update editing state FIRST (before cache update causes re-render)
+      updateEditingRowId(tempId, realId);
+
+      const pendingEdits = pendingEditsRef.current.get(tempId);
+
+      if (pendingEdits && pendingEdits.length > 0) {
+        console.log(
+          `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} edits for ${tempId} → ${realId}`,
+        );
+
+        pendingEdits.forEach((edit) => {
+          console.log(`  📤 Sending edit:`, { realId, ...edit });
+
+          upsert.mutate({
+            rowId: realId,
+            columnId: edit.columnId,
+            textValue: edit.textValue,
+            numberValue: edit.numberValue,
+          });
+        });
+
+        pendingEditsRef.current.delete(tempId);
+      }
+
+      // Also update pendingUpdates keys from temp to real
+      setPendingUpdates((prev) => {
+        const next: Record<string, string> = {};
+
+        Object.entries(prev).forEach(([key, value]) => {
+          if (key.startsWith(`${tempId}:`)) {
+            const columnId = key.split(":")[1];
+            next[`${realId}:${columnId}`] = value;
+          } else {
+            next[key] = value;
+          }
+        });
+
+        return next;
+      });
+    },
+    [upsert, updateEditingRowId], // ✅ Add updateEditingRowId to dependencies
+  );
 
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
@@ -559,25 +608,6 @@ export default function TableClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
 
-  // useEffect(() => {
-  //   setIsBusy(
-  //     isLoading ||
-  //     isFetching ||
-  //       isFetchingNextPage ||
-  //       isFetchingMultiple.current ||
-  //       isLoadingJump.current ||
-  //       upsert.isPending,
-  //   );
-  // }, [
-  //   isLoading,
-  //   isFetching,
-  //   isFetchingNextPage,
-  //   isFetchingMultiple.current,
-  //   isLoadingJump.current,
-  //   upsert.isPending,
-  //   setIsBusy,
-  // ]);
-
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -662,6 +692,7 @@ export default function TableClient() {
           }
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
+          onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
         />
       </div>
       <BottomBar rowCount={data.totalCount} />

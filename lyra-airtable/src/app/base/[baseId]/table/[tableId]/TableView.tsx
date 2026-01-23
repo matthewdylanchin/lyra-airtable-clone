@@ -25,8 +25,9 @@ export function TableView({
   rowVirtualizer,
   tableContainerRef,
   isFetchingNextPage,
-  onOpenSearch, // ✅ Add this
+  onOpenSearch,
   queryKey,
+  onFlushPendingEdits, // ✅ NEW: Callback to flush pending edits
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -36,7 +37,7 @@ export function TableView({
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
   isFetchingNextPage: boolean;
-  onOpenSearch: () => void; // ✅ Add this type
+  onOpenSearch: () => void;
   queryKey: {
     tableId: string;
     limit: number;
@@ -53,12 +54,21 @@ export function TableView({
       type?: "text" | "number";
     }[];
   };
+  onFlushPendingEdits?: (tempId: string, realId: string) => void; // ✅ NEW
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
-  // replace tempRowIds helper
   function replaceTempRowId(tempId: string, realId: string) {
+    console.log(`🔄 [replaceTempRowId] ${tempId} → ${realId}`);
+
+    // ✅ IMPORTANT: Flush pending edits FIRST (this updates editing.rowId)
+    // This must happen BEFORE the cache update causes a re-render
+    if (onFlushPendingEdits) {
+      onFlushPendingEdits(tempId, realId);
+    }
+
+    // ✅ THEN update the cache (which triggers re-render)
     utils.table.getData.setInfiniteData(queryKey, (old) => {
       if (!old) return old;
 
@@ -75,35 +85,30 @@ export function TableView({
         })),
       };
     });
+
+    // ✅ NEW: Flush any pending edits for this temp row
   }
+
   /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
 
   // ⚡ OPTIMISTIC: Append at bottom (used by "+ Add row")
   const appendRow = api.row.create.useMutation({
     onMutate: async () => {
-      // Cancel outgoing refetches
       await utils.table.getData.cancel(queryKey);
-
-      // Snapshot previous data
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       const tempRowId = `temp-${crypto.randomUUID()}`;
-
-      // Get current row count
       const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
       const newRowIndex = currentRowCount;
 
-      // ✨ Optimistically add row to cache
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
-        // Create temporary row with temp ID
         const tempRow = {
           id: tempRowId,
           rowIndex: newRowIndex,
         };
 
-        // Create empty cells for new row
         const columns = old.pages[0]?.columns ?? [];
         const tempCells = columns.map((col) => ({
           id: `temp-cell-${col.id}-${crypto.randomUUID()}`,
@@ -114,7 +119,6 @@ export function TableView({
           updatedAt: new Date(),
         }));
 
-        // Add to last page
         const updatedPages = [...old.pages];
         const lastPageIndex = updatedPages.length - 1;
         const lastPage = updatedPages[lastPageIndex];
@@ -138,8 +142,7 @@ export function TableView({
     },
 
     onSuccess: (realRow, _, ctx) => {
-      // Refetch to get real IDs
-      // await utils.table.getData.invalidate(queryKey);
+      // ✅ This now also flushes pending edits
       replaceTempRowId(ctx.tempRowId, realRow.id);
     },
 
@@ -156,14 +159,13 @@ export function TableView({
       await utils.table.getData.cancel(queryKey);
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
-      // Optimistically insert row
+      const tempRowId = `temp-row-${Date.now()}`;
+
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
-        const tempRowId = `temp-row-${Date.now()}`;
         const columns = old.pages[0]?.columns ?? [];
 
-        // Find the anchor row's index
         let anchorRowIndex = -1;
         for (const page of old.pages) {
           const row = page.rows.find((r) => r.id === variables.anchorRowId);
@@ -190,7 +192,6 @@ export function TableView({
           updatedAt: new Date(),
         }));
 
-        // Insert into appropriate page
         const updatedPages = old.pages.map((page) => {
           const totalCount = (page.totalCount ?? 0) + 1;
           return {
@@ -207,10 +208,14 @@ export function TableView({
         };
       });
 
-      return { previousData };
+      return { previousData, tempRowId }; // ✅ Return tempRowId
     },
 
-    onSuccess: async () => {
+    onSuccess: async (realRow, _, ctx) => {
+      // ✅ Replace temp ID and flush pending edits
+      if (ctx?.tempRowId && realRow?.id) {
+        replaceTempRowId(ctx.tempRowId, realRow.id);
+      }
       await utils.table.getData.invalidate(queryKey);
       setRowMenu(null);
     },
@@ -224,13 +229,15 @@ export function TableView({
     },
   });
 
+  // ... REST OF THE FILE STAYS THE SAME ...
+  // (Delete row mutation, context menu state, handlers, render logic, etc.)
+
   // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
     onMutate: async (rowId) => {
       await utils.table.getData.cancel(queryKey);
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
-      // Optimistically remove row
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old) return old;
 
@@ -410,6 +417,7 @@ export function TableView({
     visibleColumns.length,
     tableContainerRef,
   ]);
+
   /* ---------- Render ---------- */
 
   const tableWidth = visibleColumns.reduce(
@@ -485,18 +493,15 @@ export function TableView({
           </thead>
 
           <tbody>
-            {/* Top spacer */}
             {paddingTop > 0 && (
               <tr>
                 <td style={{ height: paddingTop }} />
               </tr>
             )}
 
-            {/* Virtualized rows */}
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
 
-              // Skeleton for unloaded rows
               if (!row) {
                 return (
                   <tr
@@ -580,14 +585,12 @@ export function TableView({
               );
             })}
 
-            {/* Bottom spacer */}
             {paddingBottom > 0 && (
               <tr>
                 <td style={{ height: paddingBottom }} />
               </tr>
             )}
 
-            {/* Loading indicator */}
             {isFetchingNextPage && (
               <tr>
                 <td
@@ -617,7 +620,6 @@ export function TableView({
               </tr>
             )}
 
-            {/* Add row button */}
             <tr className="border-t border-gray-200 bg-gray-50">
               <td
                 colSpan={visibleColumns.length}
@@ -650,14 +652,12 @@ export function TableView({
         </table>
       </div>
 
-      {/* Context menu ... (keep your existing menu code) */}
       {rowMenu && (
         <div
           ref={menuRef}
           className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
           style={{ top: rowMenu.y, left: rowMenu.x }}
         >
-          {/* Ask Omni - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -678,7 +678,6 @@ export function TableView({
             <span>Ask Omni...</span>
           </button>
 
-          {/* Insert record above - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("above")}
@@ -700,7 +699,6 @@ export function TableView({
             <span>Insert record above</span>
           </button>
 
-          {/* Insert record below - Functional */}
           <button
             type="button"
             onClick={() => handleInsert("below")}
@@ -722,7 +720,6 @@ export function TableView({
             <span>Insert record below</span>
           </button>
 
-          {/* Duplicate record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -743,7 +740,6 @@ export function TableView({
             <span>Duplicate record</span>
           </button>
 
-          {/* Apply template - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -764,7 +760,6 @@ export function TableView({
             <span>Apply template</span>
           </button>
 
-          {/* Expand record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -785,10 +780,8 @@ export function TableView({
             <span>Expand record</span>
           </button>
 
-          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
 
-          {/* Add comment - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -809,7 +802,6 @@ export function TableView({
             <span>Add comment</span>
           </button>
 
-          {/* Copy cell URL - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -830,7 +822,6 @@ export function TableView({
             <span>Copy cell URL</span>
           </button>
 
-          {/* Send record - Static */}
           <button
             type="button"
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
@@ -851,10 +842,8 @@ export function TableView({
             <span>Send record</span>
           </button>
 
-          {/* Divider */}
           <div className="my-2 border-t border-gray-200" />
 
-          {/* Delete record - Functional */}
           <button
             type="button"
             onClick={handleDelete}
