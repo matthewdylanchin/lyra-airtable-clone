@@ -654,7 +654,7 @@ export default function TableClient() {
     setDraft,
   });
 
-  const isBusy = isLoading || isFetchingNextPage || upsert.isPending;
+  const isBusy = isLoading || isFetchingNextPage || upsert.isPending || isFetching;
 
   useEffect(() => {
     setIsBusy(isBusy);

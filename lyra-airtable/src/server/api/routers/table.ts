@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { faker } from "@faker-js/faker";
 import { TRPCError } from "@trpc/server";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { Prisma } from "generated/prisma"; // ✅ Add this import - adjust path if needed
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
@@ -201,6 +202,7 @@ export const tableRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { tableId, limit, cursor, filters, sorts } = input;
 
+      // ✅ Verify user owns this table
       const table = await ctx.db.table.findFirst({
         where: {
           id: tableId,
@@ -211,6 +213,7 @@ export const tableRouter = createTRPCRouter({
 
       if (!table) throw new Error("UNAUTHORIZED");
 
+      // ✅ Get columns
       const columns = await ctx.db.column.findMany({
         where: { tableId: table.id },
         orderBy: { order: "asc" },
@@ -219,7 +222,7 @@ export const tableRouter = createTRPCRouter({
 
       let filteredRowIds: string[] | null = null;
 
-      // ========== FILTERING LOGIC (unchanged) ==========
+      // ========== FILTERING LOGIC ==========
       if (filters?.length) {
         const cellFilterPromises = filters.map(async (filter) => {
           const base: Record<string, unknown> = {
@@ -352,53 +355,25 @@ export const tableRouter = createTRPCRouter({
         }
       }
 
-      // ========== ✅ FIXED SORTING LOGIC ==========
-      // Build the WHERE clause for rows
+      // ========== BUILD ROW WHERE CLAUSE ==========
       const rowWhere: NonNullable<
         Parameters<typeof ctx.db.row.findMany>[0]
       >["where"] = {
         tableId: table.id,
       };
 
-      // Apply filtering if present
       if (filteredRowIds) {
         rowWhere.id = { in: filteredRowIds };
       } else if (cursor !== undefined) {
         rowWhere.rowIndex = { gt: cursor };
       }
 
-      // ✅ NEW: Build Prisma orderBy for sorting
-      let orderBy: NonNullable<
-        Parameters<typeof ctx.db.row.findMany>[0]
-      >["orderBy"] = { rowIndex: "asc" };
-
-      const firstSort = sorts?.[0];
-      if (firstSort) {
-        const column = columns.find((c) => c.id === firstSort.columnId);
-
-        if (!column) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Sort column not found",
-          });
-        }
-
-        // ✅ Use Prisma's relation sorting via cells
-        // This tells Prisma: "JOIN to cells table and order by the cell value"
-        orderBy = {
-          cells: {
-            _count: column.type === "NUMBER" ? undefined : "desc",
-          },
-        };
-
-        // Note: Prisma doesn't support direct relation sorting with WHERE clause on the relation
-        // So we need a different approach for large datasets
-      }
-
-      // ✅ WORKAROUND: For sorting, we'll use a subquery approach
+      // ========== SORTING LOGIC ==========
       let rows;
       let totalCount;
 
+      const firstSort = sorts?.[0];
+
       if (firstSort) {
         const column = columns.find((c) => c.id === firstSort.columnId);
         if (!column) {
@@ -408,47 +383,175 @@ export const tableRouter = createTRPCRouter({
           });
         }
 
-        // Get sorted cell data first
-        const sortedCells = await ctx.db.cell.findMany({
-          where: {
-            columnId: firstSort.columnId,
-            row: rowWhere,
-          },
-          select: {
-            rowId: true,
-            textValue: true,
-            numberValue: true,
-          },
-          orderBy:
-            column.type === "NUMBER"
-              ? { numberValue: firstSort.direction }
-              : { textValue: firstSort.direction },
-        });
+        if (column.type === "NUMBER") {
+          // ✅ NUMBER sorting with nulls last
+          let sortedCells: Array<{ rowId: string }>;
 
-        const sortedRowIds = sortedCells.map((c) => c.rowId);
+          if (filteredRowIds && filteredRowIds.length > 0) {
+            if (firstSort.direction === "asc") {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."numberValue" IS NULL THEN 1 ELSE 0 END as null_sort,
+              c."numberValue"
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+              AND r.id IN (${Prisma.join(filteredRowIds)})
+          ) sub
+          ORDER BY null_sort ASC, "numberValue" ASC
+        `;
+            } else {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."numberValue" IS NULL THEN 1 ELSE 0 END as null_sort,
+              c."numberValue"
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+              AND r.id IN (${Prisma.join(filteredRowIds)})
+          ) sub
+          ORDER BY null_sort ASC, "numberValue" DESC
+        `;
+            }
+          } else {
+            if (firstSort.direction === "asc") {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."numberValue" IS NULL THEN 1 ELSE 0 END as null_sort,
+              c."numberValue"
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+          ) sub
+          ORDER BY null_sort ASC, "numberValue" ASC
+        `;
+            } else {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."numberValue" IS NULL THEN 1 ELSE 0 END as null_sort,
+              c."numberValue"
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+          ) sub
+          ORDER BY null_sort ASC, "numberValue" DESC
+        `;
+            }
+          }
 
-        // Fetch rows in sorted order with pagination
-        const rowsToFetch = sortedRowIds.slice(0, limit + 1);
+          const sortedRowIds = sortedCells.map((c) => c.rowId);
+          const rowsToFetch = sortedRowIds.slice(0, limit + 1);
 
-        [rows, totalCount] = await Promise.all([
-          ctx.db.row.findMany({
-            where: {
-              id: { in: rowsToFetch },
-            },
-            select: { id: true, rowIndex: true },
-          }),
-          ctx.db.row.count({
-            where: rowWhere,
-          }),
-        ]);
+          [rows, totalCount] = await Promise.all([
+            ctx.db.row.findMany({
+              where: { id: { in: rowsToFetch } },
+              select: { id: true, rowIndex: true },
+            }),
+            ctx.db.row.count({ where: rowWhere }),
+          ]);
 
-        // Maintain sort order
-        const rowMap = new Map(rows.map((r) => [r.id, r]));
-        rows = rowsToFetch
-          .map((id) => rowMap.get(id))
-          .filter((r): r is NonNullable<typeof r> => r !== undefined);
+          const rowMap = new Map(rows.map((r) => [r.id, r]));
+          rows = rowsToFetch
+            .map((id) => rowMap.get(id))
+            .filter((r): r is NonNullable<typeof r> => r !== undefined);
+        } else {
+          // ✅ TEXT sorting: case-insensitive with nulls/empty last
+          let sortedCells: Array<{ rowId: string }>;
+
+          if (filteredRowIds && filteredRowIds.length > 0) {
+            if (firstSort.direction === "asc") {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."textValue" IS NULL OR c."textValue" = '' THEN 1 ELSE 0 END as null_sort,
+              LOWER(c."textValue") as sort_value
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+              AND r.id IN (${Prisma.join(filteredRowIds)})
+          ) sub
+          ORDER BY null_sort ASC, sort_value ASC
+        `;
+            } else {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."textValue" IS NULL OR c."textValue" = '' THEN 1 ELSE 0 END as null_sort,
+              LOWER(c."textValue") as sort_value
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+              AND r.id IN (${Prisma.join(filteredRowIds)})
+          ) sub
+          ORDER BY null_sort ASC, sort_value DESC
+        `;
+            }
+          } else {
+            if (firstSort.direction === "asc") {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."textValue" IS NULL OR c."textValue" = '' THEN 1 ELSE 0 END as null_sort,
+              LOWER(c."textValue") as sort_value
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+          ) sub
+          ORDER BY null_sort ASC, sort_value ASC
+        `;
+            } else {
+              sortedCells = await ctx.db.$queryRaw<Array<{ rowId: string }>>`
+          SELECT "rowId" FROM (
+            SELECT DISTINCT ON (c."rowId") 
+              c."rowId",
+              CASE WHEN c."textValue" IS NULL OR c."textValue" = '' THEN 1 ELSE 0 END as null_sort,
+              LOWER(c."textValue") as sort_value
+            FROM "Cell" c
+            INNER JOIN "Row" r ON r.id = c."rowId"
+            WHERE c."columnId" = ${firstSort.columnId}
+              AND r."tableId" = ${table.id}
+          ) sub
+          ORDER BY null_sort ASC, sort_value DESC
+        `;
+            }
+          }
+
+          const sortedRowIds = sortedCells.map((c) => c.rowId);
+          const rowsToFetch = sortedRowIds.slice(0, limit + 1);
+
+          [rows, totalCount] = await Promise.all([
+            ctx.db.row.findMany({
+              where: { id: { in: rowsToFetch } },
+              select: { id: true, rowIndex: true },
+            }),
+            ctx.db.row.count({ where: rowWhere }),
+          ]);
+
+          const rowMap = new Map(rows.map((r) => [r.id, r]));
+          rows = rowsToFetch
+            .map((id) => rowMap.get(id))
+            .filter((r): r is NonNullable<typeof r> => r !== undefined);
+        }
       } else {
-        // No sorting - use default pagination
+        // ✅ No sorting - use default pagination by rowIndex
         [rows, totalCount] = await Promise.all([
           ctx.db.row.findMany({
             where: rowWhere,
@@ -456,12 +559,10 @@ export const tableRouter = createTRPCRouter({
             take: limit + 1,
             select: { id: true, rowIndex: true },
           }),
-          ctx.db.row.count({
-            where: rowWhere,
-          }),
+          ctx.db.row.count({ where: rowWhere }),
         ]);
       }
-
+      // ========== PAGINATION ==========
       const hasMore = rows.length > limit;
       const resultRows = hasMore ? rows.slice(0, limit) : rows;
 
@@ -469,6 +570,7 @@ export const tableRouter = createTRPCRouter({
         ? resultRows[resultRows.length - 1]?.rowIndex
         : undefined;
 
+      // ========== FETCH CELLS ==========
       const rowIds = resultRows.map((r) => r.id);
 
       const cells = rowIds.length
