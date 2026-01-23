@@ -23,7 +23,6 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
-import { TableLoadingIndicator } from "./Components/LoadingIndicator";
 
 type ColumnType = {
   id: string;
@@ -554,24 +553,24 @@ export default function TableClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
 
-  useEffect(() => {
-    setIsBusy(
-      isLoading ||
-      isFetching ||
-        isFetchingNextPage ||
-        isFetchingMultiple.current ||
-        isLoadingJump.current ||
-        upsert.isPending,
-    );
-  }, [
-    isLoading,
-    isFetching,
-    isFetchingNextPage,
-    isFetchingMultiple.current,
-    isLoadingJump.current,
-    upsert.isPending,
-    setIsBusy,
-  ]);
+  // useEffect(() => {
+  //   setIsBusy(
+  //     isLoading ||
+  //     isFetching ||
+  //       isFetchingNextPage ||
+  //       isFetchingMultiple.current ||
+  //       isLoadingJump.current ||
+  //       upsert.isPending,
+  //   );
+  // }, [
+  //   isLoading,
+  //   isFetching,
+  //   isFetchingNextPage,
+  //   isFetchingMultiple.current,
+  //   isLoadingJump.current,
+  //   upsert.isPending,
+  //   setIsBusy,
+  // ]);
 
   if (isLoading) {
     return (
@@ -597,11 +596,11 @@ export default function TableClient() {
     );
   }
 
-  const isBusy =
-    isLoading ||
-    isFetchingNextPage ||
-    isFetchingMultiple.current ||
-    isLoadingJump.current;
+  const isBusy = isLoading || isFetchingNextPage || upsert.isPending;
+
+  useEffect(() => {
+    setIsBusy(isBusy);
+  }, [isBusy, setIsBusy]);
 
   return (
     <div className="flex h-full flex-col">
