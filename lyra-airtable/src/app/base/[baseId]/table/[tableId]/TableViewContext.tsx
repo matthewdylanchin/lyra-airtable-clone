@@ -3,6 +3,7 @@
 import { createContext, useContext, useState } from "react";
 import type { FilterCondition } from "./types";
 import type { RouterInputs } from "@/trpc/react";
+import type { Prisma } from "@prisma/client";
 
 type TableDataQueryInput = RouterInputs["table"]["getData"];
 
@@ -49,6 +50,9 @@ type TableViewContextType = {
 
   isBusy: boolean;
   setIsBusy: (v: boolean) => void;
+
+  // currentView: Prisma.View | null;
+  // setCurrentView: (view: Prisma.View) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -72,6 +76,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
   const [sorts, setSorts] = useState<SortCondition[]>([]);
 
+  // const [currentView, setCurrentView] = useState<Prisma.View | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [dataQueryKey, setDataQueryKey] = useState<TableDataQueryInput | null>(
     null,
@@ -104,6 +109,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         setDataQueryKey,
         isBusy,
         setIsBusy,
+        // setCurrentView,
       }}
     >
       {children}
