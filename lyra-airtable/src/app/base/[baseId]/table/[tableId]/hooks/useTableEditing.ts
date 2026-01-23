@@ -7,6 +7,7 @@ export type PendingEdit = {
   columnId: string;
   textValue: string | null;
   numberValue: number | null;
+  rowId?: string;
 };
 
 export type PendingEditsMap = Map<string, PendingEdit[]>;
@@ -66,6 +67,22 @@ export function useTableEditing({
     });
   }, []);
 
+  // ✅ NEW: Function to update the editing columnId when temp column ID is replaced
+  const updateEditingColumnId = useCallback(
+    (tempId: string, realId: string) => {
+      setEditing((prev) => {
+        if (prev && prev.columnId === tempId) {
+          console.log(
+            `🔄 [updateEditingColumnId] Updating editing state: ${tempId} → ${realId}`,
+          );
+          return { ...prev, columnId: realId };
+        }
+        return prev;
+      });
+    },
+    [],
+  );
+
   const commitEdit = () => {
     console.log("🟢 [commitEdit] START", performance.now());
 
@@ -108,22 +125,37 @@ export function useTableEditing({
         "⏳ [commitEdit] Temp row/column detected, queueing edit for later",
       );
 
-      // Queue the edit to be flushed when real ID arrives
-      if (pendingEditsRef) {
-        const existing = pendingEditsRef.current.get(rowId) || [];
+      // ✅ Queue by BOTH rowId and columnId for temp columns
+      // Use a composite key to handle both cases
+      const queueKey = isTempRow ? rowId : `col:${columnId}`;
 
-        // Check if we already have an edit for this column, update it instead of adding
+      if (pendingEditsRef) {
+        const existing = pendingEditsRef.current.get(queueKey) || [];
+
+        const editEntry = {
+          columnId,
+          textValue,
+          numberValue,
+          // ✅ NEW: Also store rowId for column-based queuing
+          rowId,
+        } as PendingEdit & { rowId?: string };
+
+        // Check if we already have an edit for this cell
         const existingIndex = existing.findIndex(
-          (e) => e.columnId === columnId,
+          (e) =>
+            e.columnId === columnId &&
+            (e as PendingEdit & { rowId?: string }).rowId === rowId,
         );
+
         if (existingIndex >= 0) {
-          existing[existingIndex] = { columnId, textValue, numberValue };
+          existing[existingIndex] = editEntry;
         } else {
-          existing.push({ columnId, textValue, numberValue });
+          existing.push(editEntry);
         }
 
-        pendingEditsRef.current.set(rowId, existing);
+        pendingEditsRef.current.set(queueKey, existing);
         console.log("📝 [commitEdit] Queued edit:", {
+          queueKey,
           rowId,
           columnId,
           textValue,
@@ -164,6 +196,7 @@ export function useTableEditing({
     cancelEdit,
     commitEdit,
     setDraft,
-    updateEditingRowId, // ✅ NEW: Export this
+    updateEditingRowId,
+    updateEditingColumnId, // ✅ NEW: Export this
   };
 }

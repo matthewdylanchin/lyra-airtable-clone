@@ -8,7 +8,11 @@ import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 import SortPanel from "./Components/SortPanel";
 import { useTableData } from "./hooks/useTableData";
-import { useTableEditing, type PendingEditsMap } from "./hooks/useTableEditing"; // ✅ Import type
+import {
+  useTableEditing,
+  type PendingEditsMap,
+  type PendingEdit,
+} from "./hooks/useTableEditing"; // ✅ Import type
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -271,6 +275,7 @@ export default function TableClient() {
     commitEdit,
     setDraft,
     updateEditingRowId,
+    updateEditingColumnId,
   } = useTableEditing({
     data,
     cellByKey,
@@ -286,48 +291,107 @@ export default function TableClient() {
 
   // ✅ NEW: Function to flush pending edits when temp ID is replaced with real ID
   const flushPendingEdits = useCallback(
-    (tempId: string, realId: string) => {
-      // ✅ NEW: Update editing state FIRST (before cache update causes re-render)
-      updateEditingRowId(tempId, realId);
+    (tempId: string, realId: string, type: "row" | "column" = "row") => {
+      if (type === "row") {
+        // Existing row logic
+        updateEditingRowId(tempId, realId);
 
-      const pendingEdits = pendingEditsRef.current.get(tempId);
+        const pendingEdits = pendingEditsRef.current.get(tempId);
 
-      if (pendingEdits && pendingEdits.length > 0) {
-        console.log(
-          `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} edits for ${tempId} → ${realId}`,
-        );
+        if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} row edits for ${tempId} → ${realId}`,
+          );
 
-        pendingEdits.forEach((edit) => {
-          console.log(`  📤 Sending edit:`, { realId, ...edit });
+          pendingEdits.forEach((edit) => {
+            console.log(`  📤 Sending edit:`, {
+              realId,
+              columnId: edit.columnId,
+            });
 
-          upsert.mutate({
-            rowId: realId,
-            columnId: edit.columnId,
-            textValue: edit.textValue,
-            numberValue: edit.numberValue,
+            upsert.mutate({
+              rowId: realId,
+              columnId: edit.columnId,
+              textValue: edit.textValue,
+              numberValue: edit.numberValue,
+            });
           });
-        });
 
-        pendingEditsRef.current.delete(tempId);
+          pendingEditsRef.current.delete(tempId);
+        }
+
+        // Update pendingUpdates keys from temp to real
+        setPendingUpdates((prev) => {
+          const next: Record<string, string> = {};
+
+          Object.entries(prev).forEach(([key, value]) => {
+            if (key.startsWith(`${tempId}:`)) {
+              const columnId = key.split(":")[1];
+              next[`${realId}:${columnId}`] = value;
+            } else {
+              next[key] = value;
+            }
+          });
+
+          return next;
+        });
+      } else {
+        // ✅ Column logic
+        updateEditingColumnId(tempId, realId);
+
+        const queueKey = `col:${tempId}`;
+        const pendingEdits = pendingEditsRef.current.get(queueKey);
+
+        if (pendingEdits && pendingEdits.length > 0) {
+          console.log(
+            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} column edits for ${tempId} → ${realId}`,
+          );
+
+          pendingEdits.forEach((edit) => {
+            const rowId = edit.rowId;
+            if (!rowId) return;
+
+            console.log(`  📤 Sending edit:`, {
+              rowId,
+              columnId: realId,
+            });
+
+            upsert.mutate({
+              rowId,
+              columnId: realId,
+              textValue: edit.textValue,
+              numberValue: edit.numberValue,
+            });
+          });
+
+          pendingEditsRef.current.delete(queueKey);
+        }
+
+        // Update pendingUpdates keys from temp column to real
+        setPendingUpdates((prev) => {
+          const next: Record<string, string> = {};
+
+          Object.entries(prev).forEach(([key, value]) => {
+            if (key.endsWith(`:${tempId}`)) {
+              const rowId = key.split(":")[0];
+              next[`${rowId}:${realId}`] = value;
+            } else {
+              next[key] = value;
+            }
+          });
+
+          return next;
+        });
       }
-
-      // Also update pendingUpdates keys from temp to real
-      setPendingUpdates((prev) => {
-        const next: Record<string, string> = {};
-
-        Object.entries(prev).forEach(([key, value]) => {
-          if (key.startsWith(`${tempId}:`)) {
-            const columnId = key.split(":")[1];
-            next[`${realId}:${columnId}`] = value;
-          } else {
-            next[key] = value;
-          }
-        });
-
-        return next;
-      });
     },
-    [upsert, updateEditingRowId], // ✅ Add updateEditingRowId to dependencies
+    [upsert, updateEditingRowId, updateEditingColumnId],
+  );
+
+  const flushPendingColumnEdits = useCallback(
+    (tempId: string, realId: string) => {
+      flushPendingEdits(tempId, realId, "column");
+    },
+    [flushPendingEdits],
   );
 
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
@@ -693,6 +757,7 @@ export default function TableClient() {
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
           onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
+          onFlushPendingColumnEdits={flushPendingColumnEdits} // ✅ NEW
         />
       </div>
       <BottomBar rowCount={data.totalCount} />

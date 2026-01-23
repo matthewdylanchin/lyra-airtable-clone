@@ -28,6 +28,7 @@ export function TableView({
   onOpenSearch,
   queryKey,
   onFlushPendingEdits, // ✅ NEW: Callback to flush pending edits
+  onFlushPendingColumnEdits,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -55,6 +56,7 @@ export function TableView({
     }[];
   };
   onFlushPendingEdits?: (tempId: string, realId: string) => void; // ✅ NEW
+  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void; // ✅ NEW
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
@@ -486,6 +488,7 @@ export function TableView({
                     tableId={tableId}
                     queryKey={queryKey}
                     className="absolute inset-0"
+                    onFlushPendingColumnEdits={onFlushPendingColumnEdits} // ✅ NEW
                   />
                 </th>
               </tr>
@@ -875,6 +878,7 @@ export function TableView({
           autoOpen
           initialPosition={addColumnOpen.position}
           queryKey={queryKey}
+          onFlushPendingColumnEdits={onFlushPendingColumnEdits} // ✅ NEW
         />
       )}
     </div>
