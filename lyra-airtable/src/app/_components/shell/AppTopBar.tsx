@@ -147,10 +147,10 @@ export default function AppTopBar() {
                   onFocus={() => setIsNameFocused(true)}
                   onBlur={handleSaveName}
                   onKeyDown={handleKeyDown}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[15px] font-semibold text-zinc-900 transition-all outline-none ${
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[18px] text-zinc-700 transition-all outline-none ${
                     isNameFocused
                       ? "border-2 border-zinc-400 bg-white"
-                      : "border border-transparent bg-transparent hover:bg-zinc-50"
+                      : "border border-transparent bg-transparent hover:bg-zinc-100"
                   }`}
                 />
 
@@ -197,8 +197,7 @@ export default function AppTopBar() {
                 )}
 
                 <div className="border-t border-zinc-200" />
-                {/* Base Guide Section - NO divider here */}
-                {/* Base Guide Section - NO divider here */}
+                {/* Base Guide Section */}
                 <button
                   onClick={() => setIsBaseGuideOpen(!isBaseGuideOpen)}
                   className="mt-1 flex w-full items-center gap-1 rounded px-2 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-100"
