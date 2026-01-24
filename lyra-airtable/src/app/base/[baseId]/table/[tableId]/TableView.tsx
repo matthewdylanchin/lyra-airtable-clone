@@ -623,33 +623,53 @@ export function TableView({
               </tr>
             )}
 
-            <tr className="border-t border-gray-200 bg-gray-50">
-              <td
-                colSpan={visibleColumns.length}
-                className="px-3 py-2 text-left"
-              >
-                <button
-                  type="button"
-                  onClick={handleAddRow}
-                  disabled={appendRow.isPending}
-                  className="inline-flex items-center gap-1 text-sm text-gray-500 transition-colors hover:text-gray-700"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+            {/* Add Row - styled like a regular row with + in first column */}
+            <tr
+              className="group cursor-pointer hover:bg-gray-50"
+              onClick={() => {
+                if (!appendRow.isPending) {
+                  handleAddRow();
+                }
+              }}
+            >
+              {visibleColumns.map((col, colIndex) => {
+                const width = col.getSize();
+                const isFirstColumn = colIndex === 0;
+
+                return (
+                  <td
+                    key={`add-row-${col.id}`}
+                    className="border-r border-b border-gray-200 last:border-r-0"
+                    style={{
+                      width: `${width}px`,
+                      minWidth: `${width}px`,
+                      maxWidth: `${width}px`,
+                      padding: 0,
+                    }}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  Add Row
-                </button>
-              </td>
+                    {isFirstColumn ? (
+                      <div className="flex h-9 w-full items-center justify-center text-gray-400 transition-colors group-hover:text-gray-600">
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="h-9" />
+                    )}
+                  </td>
+                );
+              })}
+              <td className="w-12 max-w-12 min-w-12 border-b border-gray-200"></td>
             </tr>
           </tbody>
         </table>

@@ -54,6 +54,7 @@ type TableDataType = {
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+  const {hiddenColumnIds} = useTableView();
 
   const {
     searchBarOpen,
@@ -276,6 +277,8 @@ export default function TableClient() {
     setDraft,
     updateEditingRowId,
     updateEditingColumnId,
+    editingRef,
+    draftRef,
   } = useTableEditing({
     data,
     cellByKey,
@@ -466,13 +469,12 @@ export default function TableClient() {
       createColumns({
         data,
         editing,
-        draft,
+        draftRef, // ✅ Get the refs
         selectedCell,
         setSelectedCell,
         startEdit,
         commitEdit: commitEditSafe,
         cancelEdit,
-        setDraft,
         onInsert: (
           insert: ColumnInsertPosition,
           position: { top: number; left: number },
@@ -484,11 +486,11 @@ export default function TableClient() {
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
+        hiddenColumnIds
       }),
     [
       data,
       editing,
-      draft,
       selectedCell,
       startEdit,
       cancelEdit,
@@ -498,6 +500,7 @@ export default function TableClient() {
       currentMatch,
       filteredColumnIds,
       sortedColumnIds,
+      hiddenColumnIds,
     ],
   );
 
@@ -654,7 +657,8 @@ export default function TableClient() {
     setDraft,
   });
 
-  const isBusy = isLoading || isFetchingNextPage || upsert.isPending || isFetching;
+  const isBusy =
+    isLoading || isFetchingNextPage || upsert.isPending || isFetching;
 
   useEffect(() => {
     setIsBusy(isBusy);

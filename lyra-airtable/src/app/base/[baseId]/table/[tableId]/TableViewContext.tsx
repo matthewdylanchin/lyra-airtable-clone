@@ -68,6 +68,8 @@ type TableViewContextType = {
   renameView: (viewId: string, name: string) => Promise<void>;
   duplicateView: (viewId: string) => Promise<View>;
   isViewDirty: boolean; // Has unsaved changes
+  hiddenColumnIds: string[];
+  setHiddenColumnIds: (ids: string[]) => void;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -122,6 +124,58 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
   // Get current view object
   const currentView = views.find((v) => v.id === currentViewId) ?? null;
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<string[]>([]);
+
+  // Update the "Load view data when view changes" effect:
+  useEffect(() => {
+    if (!currentView || !currentViewId) return;
+
+    if (lastLoadedViewId.current === currentViewId) return;
+
+    lastLoadedViewId.current = currentViewId;
+    isLoadingView.current = true;
+
+    const viewFilters =
+      (currentView.filtersJson as unknown as FilterCondition[]) ?? [];
+    setFilters(viewFilters);
+
+    setFilterConjunction(
+      (currentView.filterConjunction as "and" | "or") ?? "and",
+    );
+
+    const viewSorts = (currentView.sortsJson as unknown as SortType[]) ?? [];
+    setSorts(viewSorts);
+
+    // ✅ Load hidden columns
+    const viewHiddenCols =
+      (currentView.hiddenCols as unknown as string[]) ?? [];
+    setHiddenColumnIds(viewHiddenCols);
+
+    setIsViewDirty(false);
+
+    setTimeout(() => {
+      isLoadingView.current = false;
+    }, 100);
+  }, [currentViewId, currentView]);
+
+  useEffect(() => {
+    if (!currentViewId || isLoadingView.current) return;
+
+    setIsViewDirty(true);
+
+    const timeout = setTimeout(() => {
+      void updateViewMutation.mutate({
+        viewId: currentViewId,
+        filtersJson: filters,
+        filterConjunction,
+        sortsJson: sorts,
+        hiddenCols: hiddenColumnIds, // ✅ Add this
+      });
+    }, 1000);
+
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, filterConjunction, sorts, currentViewId, hiddenColumnIds]); // ✅ Add hiddenColumnIds
 
   useEffect(() => {
     if (typeof window === "undefined" || !currentViewId) return;
@@ -303,6 +357,27 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     hasAttemptedAutoCreate.current = false;
   }, [tableId]);
 
+  useEffect(() => {
+    setCurrentViewId(null);
+    setFilters([]);
+    setSorts([]);
+    setFilterConjunction("and");
+    setSearchQuery("");
+    setSearchBarOpen(false);
+    setFilterPanelOpen(false);
+    setSortPanelOpen(false);
+    setIsViewDirty(false);
+    hasAttemptedAutoCreate.current = false;
+    isLoadingView.current = false;
+  }, [tableId]);
+
+  // Auto-select first view when views load
+  useEffect(() => {
+    if (views.length > 0 && !currentViewId) {
+      setCurrentViewId(views[0]!.id);
+    }
+  }, [views, currentViewId]);
+
   return (
     <TableViewContext.Provider
       value={{
@@ -351,6 +426,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         renameView,
         duplicateView,
         isViewDirty,
+
+        hiddenColumnIds,
+        setHiddenColumnIds,
       }}
     >
       {children}

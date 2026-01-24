@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import ColumnHeaderMenu from "./ColumnHeaderMenu";
 import EditFieldPopover from "./EditFieldPopover";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, CaseSensitive, Hash, ALargeSmall } from "lucide-react";
 import type { ColumnInsertPosition } from "@/app/base/[baseId]/table/[tableId]/types";
 
 export default function ColumnHeader({
@@ -24,6 +24,9 @@ export default function ColumnHeader({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
+  // Get the appropriate icon based on column type
+  const Icon = column.type === "NUMBER" ? Hash : ALargeSmall;
+
   return (
     <>
       <div
@@ -34,7 +37,10 @@ export default function ColumnHeader({
           setEditFieldOpen(true);
         }}
       >
-        <span className="truncate text-sm">{column.name}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <Icon className="h-4 w-4 flex-shrink-0 text-zinc-700" />
+          <span className="truncate text-sm text-zinc-800">{column.name}</span>
+        </div>
 
         <button
           ref={buttonRef}
@@ -53,7 +59,6 @@ export default function ColumnHeader({
             onClose={() => setMenuOpen(false)}
             onRename={() => setEditFieldOpen(true)}
             onInsert={(insert) => {
-              // Capture chevron position before anything else
               if (buttonRef.current) {
                 const rect = buttonRef.current.getBoundingClientRect();
                 const position = {

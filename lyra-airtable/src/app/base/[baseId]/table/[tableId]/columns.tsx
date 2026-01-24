@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef } from "react";
+import type { MutableRefObject } from "react";
 import type { ColumnDef, CellContext } from "@tanstack/react-table";
 import type {
   TableData,
@@ -75,26 +77,102 @@ function getColumnWidth(columnName: string, columnType?: string): number {
   return 150;
 }
 
+// ✅ Separate component for the input (manages its own local state)
+function EditInput({
+  rowIndex,
+  columnId,
+  isNumberCol,
+  draftRef,
+  commitEdit,
+  cancelEdit,
+}: {
+  rowIndex: number;
+  columnId: string;
+  isNumberCol: boolean;
+  draftRef: MutableRefObject<string>;
+  commitEdit: () => void;
+  cancelEdit: () => void;
+}) {
+  // ✅ Local state for the input - only this component re-renders on typing
+  const [localValue, setLocalValue] = useState(draftRef.current);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local value to ref on every change
+  useEffect(() => {
+    draftRef.current = localValue;
+  }, [localValue, draftRef]);
+
+  // Focus on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      key={`edit-${rowIndex}-${columnId}`}
+      value={localValue}
+      onChange={(e) => {
+        const val = e.target.value;
+
+        if (isNumberCol) {
+          if (/^-?\d*\.?\d*$/.test(val)) {
+            setLocalValue(val);
+          }
+          return;
+        }
+
+        setLocalValue(val);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          commitEdit();
+          return;
+        }
+
+        if (e.key === "Tab") {
+          e.preventDefault();
+          commitEdit();
+          return;
+        }
+
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelEdit();
+          return;
+        }
+      }}
+      onBlur={() => {
+        commitEdit();
+      }}
+      className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+      style={{ boxShadow: "none" }}
+    />
+  );
+}
+
 export function createColumns({
   data,
-  editing,
-  draft,
+  editing, // ✅ Keep editing as STATE (needed to trigger re-render when editing starts/stops)
+  draftRef, // ✅ Use ref for draft (avoids re-render on every keystroke)
   selectedCell,
   setSelectedCell,
   startEdit,
   commitEdit,
   cancelEdit,
-  setDraft,
   onInsert,
   upsert,
   searchQuery,
   currentMatch,
   filteredColumnIds,
   sortedColumnIds,
+  hiddenColumnIds,
 }: {
   data: TableData | undefined;
-  editing: Editing;
-  draft: string;
+  editing: Editing; // ✅ STATE
+  draftRef: MutableRefObject<string>; // ✅ REF
   selectedCell: SelectedCell;
   setSelectedCell: (v: SelectedCell) => void;
   startEdit: (
@@ -104,7 +182,6 @@ export function createColumns({
   ) => void;
   commitEdit: () => void;
   cancelEdit: () => void;
-  setDraft: (v: string) => void;
   onInsert: (
     insert: ColumnInsertPosition,
     position: { top: number; left: number },
@@ -119,6 +196,7 @@ export function createColumns({
   } | null;
   filteredColumnIds?: Set<string>;
   sortedColumnIds?: Set<string>;
+  hiddenColumnIds?: string[]; // ✅ Add type
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -159,136 +237,105 @@ export function createColumns({
       },
     },
 
-    ...data.columns.map((c) => {
-      // Check if this column is filtered or sorted
-      const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
-      const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
+    ...data.columns
+      .filter((c) => !hiddenColumnIds?.includes(c.id))
+      .map((c) => {
+        // Check if this column is filtered or sorted
+        const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
+        const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
 
-      return {
-        id: c.id,
-        accessorFn: (row: TableRow) => row[c.id] ?? null,
-        size: getColumnWidth(c.name, c.type),
-        minSize: 50,
-
-        meta: {
+        return {
           id: c.id,
-          name: c.name,
-          type: c.type,
-        },
+          accessorFn: (row: TableRow) => row[c.id] ?? null,
+          size: getColumnWidth(c.name, c.type),
+          minSize: 50,
 
-        header: () => (
-          <ColumnHeader
-            column={{ id: c.id, name: c.name, type: c.type }}
-            tableId={data.table.id}
-            onInsert={onInsert}
-          />
-        ),
-        cell: (info: CellContext<TableRow, CellValue>) => {
-          const value = info.getValue();
-          const rowId = info.row.original.__rowId;
-          const rowIndex = info.row.index;
-          const colIndex = info.column.getIndex();
+          meta: {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+          },
 
-          const isSelected =
-            selectedCell?.rowIndex === rowIndex &&
-            selectedCell?.colIndex === colIndex;
+          header: () => (
+            <ColumnHeader
+              column={{ id: c.id, name: c.name, type: c.type }}
+              tableId={data.table.id}
+              onInsert={onInsert}
+            />
+          ),
+          cell: (info: CellContext<TableRow, CellValue>) => {
+            const value = info.getValue();
+            const rowId = info.row.original.__rowId;
+            const rowIndex = info.row.index;
+            const colIndex = info.column.getIndex();
 
-          const isEditing =
-            editing?.rowId === rowId && editing?.columnId === c.id;
+            const isSelected =
+              selectedCell?.rowIndex === rowIndex &&
+              selectedCell?.colIndex === colIndex;
 
-          const isNumberCol = c.type === "NUMBER";
+            // ✅ Use state for isEditing check (triggers re-render when editing starts/stops)
+            const isEditing =
+              editing?.rowId === rowId && editing?.columnId === c.id;
 
-          const isPending =
-            upsert.isPending &&
-            upsert.variables?.rowId === rowId &&
-            upsert.variables?.columnId === c.id;
+            const isNumberCol = c.type === "NUMBER";
 
-          // Check if this cell matches the search query
-          const cellValueStr = value != null ? String(value) : "";
-          const searchLower = searchQuery?.toLowerCase() ?? "";
-          const cellLower = cellValueStr.toLowerCase();
+            const isPending =
+              upsert.isPending &&
+              upsert.variables?.rowId === rowId &&
+              upsert.variables?.columnId === c.id;
 
-          const isMatch =
-            searchQuery && cellValueStr && cellLower.includes(searchLower);
+            // Check if this cell matches the search query
+            const cellValueStr = value != null ? String(value) : "";
+            const searchLower = searchQuery?.toLowerCase() ?? "";
+            const cellLower = cellValueStr.toLowerCase();
 
-          // Check if this is the CURRENT focused match (dark amber)
-          const isCurrentMatch =
-            isMatch &&
-            currentMatch?.rowId === rowId &&
-            currentMatch?.columnId === c.id;
+            const isMatch =
+              searchQuery && cellValueStr && cellLower.includes(searchLower);
 
-          return (
-            <div
-              className={cn(
-                "relative flex h-9 w-full cursor-default items-center outline-none",
-                isSelected && "ring-2 ring-blue-600 ring-inset",
-                !isEditing && "hover:bg-zinc-50",
-                // Column highlighting priority: filter (green) > sort (orange)
-                // If filtered, use green regardless of sort state
-                isFilteredColumn && "bg-emerald-50",
-                // If sorted but NOT filtered, use orange
-                isSortedColumn && !isFilteredColumn && "bg-orange-50",
-                // Search highlighting (highest priority)
-                isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
-                isMatch &&
-                  !isCurrentMatch &&
-                  "border-l-2 border-amber-100 bg-amber-100",
-              )}
-              onClick={() => setSelectedCell({ rowIndex, colIndex })}
-              onDoubleClick={() => startEdit(rowId, c.id, "append")}
-            >
-              {isEditing ? (
-                <input
-                  key={`edit-${rowIndex}-${c.id}`}
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => {
-                    const val = e.target.value;
+            // Check if this is the CURRENT focused match (dark amber)
+            const isCurrentMatch =
+              isMatch &&
+              currentMatch?.rowId === rowId &&
+              currentMatch?.columnId === c.id;
 
-                    if (isNumberCol) {
-                      if (/^-?\d*\.?\d*$/.test(val)) {
-                        setDraft(val);
-                      }
-                      return;
-                    }
-
-                    setDraft(val);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      commitEdit();
-                      return;
-                    }
-
-                    if (e.key === "Tab") {
-                      e.preventDefault();
-                      commitEdit();
-                      return;
-                    }
-
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      cancelEdit();
-                      return;
-                    }
-                  }}
-                  onBlur={() => {
-                    commitEdit();
-                  }}
-                  className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
-                  style={{ boxShadow: "none" }}
-                />
-              ) : (
-                <span className="block truncate px-2.5 text-sm">
-                  {String(value ?? "")}
-                </span>
-              )}
-            </div>
-          );
-        },
-      };
-    }),
+            return (
+              <div
+                className={cn(
+                  "relative flex h-9 w-full cursor-default items-center outline-none",
+                  isSelected && "ring-2 ring-blue-600 ring-inset",
+                  !isEditing && "hover:bg-zinc-50",
+                  // Column highlighting priority: filter (green) > sort (orange)
+                  // If filtered, use green regardless of sort state
+                  isFilteredColumn && "bg-emerald-50",
+                  // If sorted but NOT filtered, use orange
+                  isSortedColumn && !isFilteredColumn && "bg-orange-50",
+                  // Search highlighting (highest priority)
+                  isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
+                  isMatch &&
+                    !isCurrentMatch &&
+                    "border-l-2 border-amber-100 bg-amber-100",
+                )}
+                onClick={() => setSelectedCell({ rowIndex, colIndex })}
+                onDoubleClick={() => startEdit(rowId, c.id, "append")}
+              >
+                {isEditing ? (
+                  <EditInput
+                    rowIndex={rowIndex}
+                    columnId={c.id}
+                    isNumberCol={isNumberCol}
+                    draftRef={draftRef}
+                    commitEdit={commitEdit}
+                    cancelEdit={cancelEdit}
+                  />
+                ) : (
+                  <span className="block truncate px-2.5 text-sm text-zinc-600">
+                    {String(value ?? "")}
+                  </span>
+                )}
+              </div>
+            );
+          },
+        };
+      }),
   ];
 }

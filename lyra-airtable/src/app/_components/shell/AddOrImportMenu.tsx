@@ -9,32 +9,30 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   const [name, setName] = useState("Table 1");
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const creatingRef = useRef(false);
   const utils = api.useUtils();
+
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // ✅ Use state instead of ref
 
   const create = api.table.create.useMutation({
     onSuccess: async () => {
       setOpen(false);
       setName("");
       setNameError(null);
-
       await utils.table.listByBase.invalidate();
-      // ...
     },
     onError: (err) => {
-      // Show inline bubble for duplicate name
       if (err.data?.code === "CONFLICT") {
-        setNameError(err.message); // "Please enter a unique table name"
+        setNameError(err.message);
         return;
       }
-      // fallback for unexpected errors
       setNameError("Something went wrong");
+    },
+    onSettled: () => {
+      setIsSubmitting(false); // ✅ Reset after mutation completes
     },
   });
 
-  const [nameError, setNameError] = useState<string | null>(null);
-
-  // optional: auto-suggest Table N based on current tables count
   const { data: tables = [] } = api.table.listByBase.useQuery(
     { baseId },
     { enabled: !!baseId },
@@ -59,6 +57,18 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
     };
   }, [open]);
 
+  const handleCreate = () => {
+    // ✅ Guard: Check both state AND mutation status
+    if (isSubmitting || create.isPending || name.trim().length === 0) {
+      return;
+    }
+
+    setIsSubmitting(true); // ✅ Set immediately before mutation
+    setNameError(null);
+
+    create.mutate({ baseId, name: name.trim() });
+  };
+
   return (
     <div className="relative">
       <button
@@ -67,6 +77,7 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
         onClick={() => {
           setOpen((v) => !v);
           setName(nextDefaultName);
+          setNameError(null); // ✅ Clear error when opening
         }}
         className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-white/60"
       >
@@ -92,13 +103,18 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
                 setName(e.target.value);
                 setNameError(null);
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCreate();
+                }
+              }}
+              disabled={isSubmitting}
             />
 
             {nameError && (
               <div className="absolute top-[64px] left-2 z-50">
-                {/* little red triangle */}
                 <div className="ml-4 h-0 w-0 border-r-[8px] border-b-[8px] border-l-[8px] border-r-transparent border-b-rose-300 border-l-transparent" />
-                {/* bubble */}
                 <div className="mt-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 shadow-sm">
                   {nameError}
                 </div>
@@ -110,30 +126,21 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="h-9 rounded-md px-3 text-sm hover:bg-zinc-50"
+              disabled={isSubmitting}
+              className="h-9 rounded-md px-3 text-sm hover:bg-zinc-50 disabled:opacity-50"
             >
               Cancel
             </button>
 
             <button
               type="button"
-              disabled={create.isPending || name.trim().length === 0}
-              onClick={() => {
-                if (creatingRef.current) return;
-                creatingRef.current = true;
-
-                create.mutate(
-                  { baseId, name: name.trim() },
-                  {
-                    onSettled: () => {
-                      creatingRef.current = false;
-                    },
-                  },
-                );
-              }}
+              disabled={
+                isSubmitting || create.isPending || name.trim().length === 0
+              }
+              onClick={handleCreate}
               className="h-9 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
             >
-              {create.isPending ? "Creating…" : "Create"}
+              {isSubmitting || create.isPending ? "Creating…" : "Create"}
             </button>
           </div>
 
@@ -141,8 +148,8 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
             <button
               type="button"
               className="w-full rounded-md px-2 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50"
+              disabled={isSubmitting}
               onClick={() => {
-                // placeholder for later
                 alert("Import coming soon");
               }}
             >

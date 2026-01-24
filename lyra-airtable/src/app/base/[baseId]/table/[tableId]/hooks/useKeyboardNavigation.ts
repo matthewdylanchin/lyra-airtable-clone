@@ -27,6 +27,16 @@ export function useKeyboardNavigation({
       // 🚫 Don't handle global keyboard nav while a cell is being edited
       if (editing) return;
 
+      // ✅ Don't capture keys when user is typing in an input, textarea, or contenteditable
+      const activeElement = document.activeElement;
+      const isTypingInInput =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement?.getAttribute("contenteditable") === "true" ||
+        activeElement?.closest("[contenteditable='true']") !== null;
+
+      if (isTypingInInput) return;
+
       if (!selectedCell) return;
 
       const rows = table.getRowModel().rows;
