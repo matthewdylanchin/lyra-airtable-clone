@@ -168,12 +168,12 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => {
       isLoadingView.current = false;
     }, 100);
-  }, [currentViewId, currentView?.id]); // Only reload when view ID changes
+  }, [currentViewId]); // Only reload when view ID changes
 
   // Update view mutation
   const updateViewMutation = api.view.update.useMutation({
     onSuccess: () => {
-      utils.view.getViews.invalidate({ tableId });
+      void utils.view.getViews.invalidate({ tableId });
       setIsViewDirty(false);
     },
   });
@@ -186,7 +186,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     setIsViewDirty(true);
 
     const timeout = setTimeout(() => {
-      updateViewMutation.mutate({
+      void updateViewMutation.mutate({
         viewId: currentViewId,
         filtersJson: filters,
         filterConjunction,
@@ -200,7 +200,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   // Create view mutation
   const createViewMutation = api.view.create.useMutation({
     onSuccess: (newView) => {
-      utils.view.getViews.invalidate({ tableId });
+      void utils.view.getViews.invalidate({ tableId });
       setCurrentViewId(newView.id);
     },
   });
@@ -219,7 +219,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   // Delete view mutation
   const deleteViewMutation = api.view.delete.useMutation({
     onSuccess: () => {
-      utils.view.getViews.invalidate({ tableId });
+      void utils.view.getViews.invalidate({ tableId });
     },
   });
 

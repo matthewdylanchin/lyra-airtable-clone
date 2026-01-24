@@ -225,7 +225,7 @@ export default function LeftRail() {
                 onChange={(e) => setNewViewName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !isCreating) {
-                    handleCreateView();
+                    void handleCreateView();
                   } else if (e.key === "Escape") {
                     setIsPopupOpen(false);
                   }
@@ -326,13 +326,13 @@ export default function LeftRail() {
                     onChange={(e) => setEditingName(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        handleRenameView(view.id);
+                        void handleRenameView(view.id);
                       } else if (e.key === "Escape") {
                         setEditingViewId(null);
                         setEditingName("");
                       }
                     }}
-                    onBlur={() => handleRenameView(view.id)}
+                    onBlur={() => void handleRenameView(view.id)}
                     disabled={isRenaming}
                     className="flex-1 rounded border border-blue-500 px-1 py-0.5 text-sm outline-none disabled:opacity-50"
                   />
