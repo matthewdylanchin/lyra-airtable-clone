@@ -104,7 +104,12 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ✅ NEW: View state
-  const [currentViewId, setCurrentViewId] = useState<string | null>(null);
+  const [currentViewId, setCurrentViewId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const saved = localStorage.getItem(`table-current-view-${tableId}`);
+    return saved ?? null;
+  });
+
   const [isViewDirty, setIsViewDirty] = useState(false);
   const isLoadingView = useRef(false); // Prevent save while loading
 
@@ -117,11 +122,23 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   // Get current view object
   const currentView = views.find((v) => v.id === currentViewId) ?? null;
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !currentViewId) return;
+    localStorage.setItem(`table-current-view-${tableId}`, currentViewId);
+  }, [currentViewId, tableId]);
+
   // Auto-select first view when views load
   useEffect(() => {
-    if (views.length > 0 && !currentViewId) {
-      setCurrentViewId(views[0]!.id);
+    if (views.length === 0) return;
+
+    // If we have a currentViewId, check if it still exists
+    if (currentViewId) {
+      const viewExists = views.some((v) => v.id === currentViewId);
+      if (viewExists) return; // Current view is valid, keep it
     }
+
+    // Either no view selected or saved view was deleted - select first view
+    setCurrentViewId(views[0]!.id);
   }, [views, currentViewId]);
 
   // Load view data when view changes
