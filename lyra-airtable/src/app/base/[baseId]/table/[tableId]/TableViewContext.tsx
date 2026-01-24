@@ -303,6 +303,27 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     hasAttemptedAutoCreate.current = false;
   }, [tableId]);
 
+  useEffect(() => {
+    setCurrentViewId(null);
+    setFilters([]);
+    setSorts([]);
+    setFilterConjunction("and");
+    setSearchQuery("");
+    setSearchBarOpen(false);
+    setFilterPanelOpen(false);
+    setSortPanelOpen(false);
+    setIsViewDirty(false);
+    hasAttemptedAutoCreate.current = false;
+    isLoadingView.current = false;
+  }, [tableId]);
+
+  // Auto-select first view when views load
+  useEffect(() => {
+    if (views.length > 0 && !currentViewId) {
+      setCurrentViewId(views[0]!.id);
+    }
+  }, [views, currentViewId]);
+
   return (
     <TableViewContext.Provider
       value={{
