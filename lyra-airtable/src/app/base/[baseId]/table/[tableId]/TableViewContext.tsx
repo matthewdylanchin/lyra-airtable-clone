@@ -130,15 +130,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
   // Auto-select first view when views load
   useEffect(() => {
-    if (views.length === 0) return;
+    if (views.length === 0 || currentViewId !== null) return;
 
-    // If we have a currentViewId, check if it still exists
-    if (currentViewId) {
-      const viewExists = views.some((v) => v.id === currentViewId);
-      if (viewExists) return; // Current view is valid, keep it
-    }
-
-    // Either no view selected or saved view was deleted - select first view
+    // Select first view only if no current view is selected
     setCurrentViewId(views[0]!.id);
   }, [views, currentViewId]);
 
@@ -217,6 +211,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         tableId,
         name,
       });
+
+      setCurrentViewId(newView.id);
+      lastLoadedViewId.current = null;
       return newView;
     },
     [tableId, createViewMutation],
