@@ -91,6 +91,8 @@ export function isFilterGroup(
   return (item as FilterGroup).type === "group";
 }
 
+
+
 // Helper to get all column IDs that are filtered (for badges)
 export function getFilteredColumnIds(
   conditions: Array<FilterCondition | FilterGroup>,

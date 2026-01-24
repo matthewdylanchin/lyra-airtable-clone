@@ -8,6 +8,7 @@ CREATE TABLE "Base" (
     "ownerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "lastOpenedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Base_pkey" PRIMARY KEY ("id")
 );
@@ -65,10 +66,11 @@ CREATE TABLE "View" (
     "id" TEXT NOT NULL,
     "tableId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "order" INTEGER NOT NULL DEFAULT 0,
     "filtersJson" JSONB NOT NULL DEFAULT '[]',
+    "filterConjunction" TEXT NOT NULL DEFAULT 'and',
     "sortsJson" JSONB NOT NULL DEFAULT '[]',
     "hiddenCols" JSONB NOT NULL DEFAULT '[]',
-    "searchText" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -129,7 +131,13 @@ CREATE INDEX "Base_ownerId_idx" ON "Base"("ownerId");
 CREATE INDEX "Table_baseId_idx" ON "Table"("baseId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Table_baseId_name_key" ON "Table"("baseId", "name");
+
+-- CreateIndex
 CREATE INDEX "Column_tableId_order_idx" ON "Column"("tableId", "order");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Column_tableId_order_key" ON "Column"("tableId", "order");
 
 -- CreateIndex
 CREATE INDEX "Row_tableId_rowIndex_idx" ON "Row"("tableId", "rowIndex");
@@ -147,7 +155,10 @@ CREATE INDEX "Cell_columnId_numberValue_idx" ON "Cell"("columnId", "numberValue"
 CREATE UNIQUE INDEX "Cell_rowId_columnId_key" ON "Cell"("rowId", "columnId");
 
 -- CreateIndex
-CREATE INDEX "View_tableId_idx" ON "View"("tableId");
+CREATE INDEX "View_tableId_order_idx" ON "View"("tableId", "order");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "View_tableId_name_key" ON "View"("tableId", "name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId");
