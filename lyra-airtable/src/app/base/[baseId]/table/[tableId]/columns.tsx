@@ -328,7 +328,7 @@ export function createColumns({
                     cancelEdit={cancelEdit}
                   />
                 ) : (
-                  <span className="block truncate px-2.5 text-sm">
+                  <span className="block truncate px-2.5 text-sm text-zinc-600">
                     {String(value ?? "")}
                   </span>
                 )}
