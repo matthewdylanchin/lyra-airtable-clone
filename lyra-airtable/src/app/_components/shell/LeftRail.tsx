@@ -10,6 +10,7 @@ import {
   Trash2,
   Copy,
   Pencil,
+  Loader2,
 } from "lucide-react";
 import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewContext";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,11 @@ export default function LeftRail() {
   const [editingName, setEditingName] = useState("");
   const [menuOpenViewId, setMenuOpenViewId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeletingViewId, setIsDeletingViewId] = useState<string | null>(null); // ✅ Track which view is being deleted
+  const [isDuplicatingViewId, setIsDuplicatingViewId] = useState<string | null>(
+    null,
+  ); // ✅ Track which view is being duplicated
+  const [isRenaming, setIsRenaming] = useState(false); // ✅ Track rename in progress
 
   const createButtonRef = useRef<HTMLButtonElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -46,17 +52,11 @@ export default function LeftRail() {
   );
 
   // Generate next grid name based on view count
-  // If we have 3 views, next is "Grid 4" (regardless of existing names)
   const getNextGridName = () => {
-    // Count includes "Grid view" as 1, so next is views.length + 1
-    // But if there's no "Grid view", we start from count + 1
     const count = views.length;
-
-    // First view is "Grid view", subsequent are "Grid 2", "Grid 3", etc.
     if (count === 0) {
       return "Grid view";
     }
-
     return `Grid ${count + 1}`;
   };
 
@@ -135,41 +135,60 @@ export default function LeftRail() {
   };
 
   const handleRenameView = async (viewId: string) => {
-    if (!editingName.trim()) {
+    if (!editingName.trim() || isRenaming) {
       setEditingViewId(null);
       setEditingName("");
       return;
     }
 
+    setIsRenaming(true);
     try {
       await renameView(viewId, editingName.trim());
       setEditingViewId(null);
       setEditingName("");
     } catch (error) {
       console.error("Failed to rename view:", error);
+    } finally {
+      setIsRenaming(false);
     }
   };
 
   const handleDeleteView = async (viewId: string) => {
+    // ✅ Guard: prevent double-click
+    if (isDeletingViewId) {
+      return;
+    }
+
     if (views.length <= 1) {
       alert("Cannot delete the last view");
       return;
     }
 
+    setIsDeletingViewId(viewId);
     try {
       await deleteView(viewId);
       setMenuOpenViewId(null);
     } catch (error) {
       console.error("Failed to delete view:", error);
+    } finally {
+      setIsDeletingViewId(null);
     }
   };
 
   const handleDuplicateView = async (viewId: string) => {
+    // ✅ Guard: prevent double-click
+    if (isDuplicatingViewId) {
+      return;
+    }
+
+    setIsDuplicatingViewId(viewId);
     try {
       await duplicateView(viewId);
       setMenuOpenViewId(null);
     } catch (error) {
       console.error("Failed to duplicate view:", error);
+    } finally {
+      setIsDuplicatingViewId(null);
     }
   };
 
@@ -314,7 +333,8 @@ export default function LeftRail() {
                       }
                     }}
                     onBlur={() => handleRenameView(view.id)}
-                    className="flex-1 rounded border border-blue-500 px-1 py-0.5 text-sm outline-none"
+                    disabled={isRenaming}
+                    className="flex-1 rounded border border-blue-500 px-1 py-0.5 text-sm outline-none disabled:opacity-50"
                   />
                 </div>
               ) : (
@@ -330,19 +350,24 @@ export default function LeftRail() {
                   }}
                   className={cn(
                     "group flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium hover:bg-zinc-100",
-                    currentViewId === view.id && "bg-blue-50 text-blue-700",
+                    currentViewId === view.id && "bg-blue-50 text-zinc-700",
+                    isDeletingViewId === view.id && "opacity-50",
                   )}
                 >
                   {/* Left: icon + label */}
                   <div className="flex items-center gap-2">
-                    <Sheet
-                      className={cn(
-                        "h-4 w-4",
-                        currentViewId === view.id
-                          ? "text-blue-600"
-                          : "text-zinc-400",
-                      )}
-                    />
+                    {isDeletingViewId === view.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+                    ) : (
+                      <Sheet
+                        className={cn(
+                          "h-4 w-4",
+                          currentViewId === view.id
+                            ? "text-blue-600"
+                            : "text-blue-600",
+                        )}
+                      />
+                    )}
                     <span className="truncate">{view.name}</span>
                   </div>
 
@@ -396,19 +421,32 @@ export default function LeftRail() {
                   </button>
                   <button
                     onClick={() => handleDuplicateView(view.id)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                    disabled={!!isDuplicatingViewId}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Copy className="h-4 w-4" />
-                    Duplicate view
+                    {isDuplicatingViewId === view.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                    {isDuplicatingViewId === view.id
+                      ? "Duplicating..."
+                      : "Duplicate view"}
                   </button>
                   <hr className="my-1 border-zinc-200" />
                   <button
                     onClick={() => handleDeleteView(view.id)}
-                    disabled={views.length <= 1}
+                    disabled={views.length <= 1 || !!isDeletingViewId}
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Trash2 className="h-4 w-4" />
-                    Delete view
+                    {isDeletingViewId === view.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    {isDeletingViewId === view.id
+                      ? "Deleting..."
+                      : "Delete view"}
                   </button>
                 </div>
               )}
