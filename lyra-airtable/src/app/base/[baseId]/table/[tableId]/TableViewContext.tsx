@@ -103,6 +103,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     null,
   );
 
+  const lastLoadedViewId = useRef<string | null>(null); // ✅ Add this
   // ✅ NEW: View state
   const [currentViewId, setCurrentViewId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -143,8 +144,12 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
   // Load view data when view changes
   useEffect(() => {
-    if (!currentView) return;
+    if (!currentView || !currentViewId) return;
 
+    // ✅ Only load if we switched to a different view
+    if (lastLoadedViewId.current === currentViewId) return;
+
+    lastLoadedViewId.current = currentViewId;
     isLoadingView.current = true;
 
     // Load filters from view
@@ -168,7 +173,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => {
       isLoadingView.current = false;
     }, 100);
-  }, [currentViewId]); // Only reload when view ID changes
+  }, [currentViewId, currentView]); // Only reload when view ID changes
 
   // Update view mutation
   const updateViewMutation = api.view.update.useMutation({
@@ -201,6 +206,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const createViewMutation = api.view.create.useMutation({
     onSuccess: (newView) => {
       void utils.view.getViews.invalidate({ tableId });
+      lastLoadedViewId.current = null;
       setCurrentViewId(newView.id);
     },
   });

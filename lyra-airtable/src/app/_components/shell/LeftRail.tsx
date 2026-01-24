@@ -51,6 +51,20 @@ export default function LeftRail() {
     view.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  // ✅ Real-time validation: Check if name already exists
+  const isDuplicateName = views.some(
+    (view) => view.name.toLowerCase() === newViewName.trim().toLowerCase(),
+  );
+
+  // ✅ Check for rename duplicates (excluding current view being edited)
+  const isRenameDuplicate = editingViewId
+    ? views.some(
+        (view) =>
+          view.id !== editingViewId &&
+          view.name.toLowerCase() === editingName.trim().toLowerCase(),
+      )
+    : false;
+
   // Generate next grid name based on view count
   const getNextGridName = () => {
     const count = views.length;
@@ -224,15 +238,24 @@ export default function LeftRail() {
                 value={newViewName}
                 onChange={(e) => setNewViewName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !isCreating) {
+                  if (e.key === "Enter" && !isCreating && !isDuplicateName) {
                     void handleCreateView();
                   } else if (e.key === "Escape") {
                     setIsPopupOpen(false);
                   }
                 }}
                 placeholder="View name"
-                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className={cn(
+                  "w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-1",
+                  isDuplicateName ? "border-zinc-200" : "border-zinc-200",
+                )}
               />
+              {/* ✅ Show error message when duplicate */}
+              {isDuplicateName && (
+                <p className="mt-1.5 text-xs text-red-600">
+                  Please enter a unique view name
+                </p>
+              )}
             </div>
 
             {/* Who can edit section */}
@@ -287,7 +310,7 @@ export default function LeftRail() {
               </button>
               <button
                 onClick={handleCreateView}
-                disabled={!newViewName.trim() || isCreating}
+                disabled={!newViewName.trim() || isCreating || isDuplicateName}
                 className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isCreating ? "Creating..." : "Create new view"}
@@ -295,6 +318,8 @@ export default function LeftRail() {
             </div>
           </div>
         )}
+
+        {/* ... search input ... */}
 
         <div className="relative mt-2">
           <Search className="absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
