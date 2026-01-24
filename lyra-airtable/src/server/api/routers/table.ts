@@ -88,6 +88,18 @@ export const tableRouter = createTRPCRouter({
             ),
           );
 
+          await tx.view.create({
+            data: {
+              tableId: table.id,
+              name: "Grid view",
+              order: 0,
+              filtersJson: [],
+              sortsJson: [],
+              hiddenCols: [],
+              filterConjunction: "and",
+            },
+          });
+
           await tx.cell.createMany({
             data: rows.flatMap((r) =>
               columns.map((c) => {

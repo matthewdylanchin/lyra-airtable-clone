@@ -1,20 +1,23 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
-import type { FilterCondition } from "./types";
-import type { RouterInputs } from "@/trpc/react";
-import type { Prisma } from "@prisma/client";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import { useParams } from "next/navigation";
+import type { FilterCondition, SortType } from "./types";
+import type { RouterInputs, RouterOutputs } from "@/trpc/react";
+import { api } from "@/trpc/react";
 
 type TableDataQueryInput = RouterInputs["table"]["getData"];
-
-// ✅ Add SortCondition type
-export type SortCondition = {
-  id: string;
-  columnId: string;
-  direction: "asc" | "desc";
-};
+type View = RouterOutputs["view"]["getViews"][number];
 
 type TableViewContextType = {
+  // Search
   searchBarOpen: boolean;
   setSearchBarOpen: (open: boolean) => void;
   searchQuery: string;
@@ -24,44 +27,62 @@ type TableViewContextType = {
     React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
   >;
 
+  // Filters
   filterPanelOpen: boolean;
   setFilterPanelOpen: (open: boolean) => void;
   filterButtonRef: React.RefObject<HTMLButtonElement | null> | null;
   setFilterButtonRef: React.Dispatch<
     React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
   >;
-
   filters: FilterCondition[];
   setFilters: (filters: FilterCondition[]) => void;
   filterConjunction: "and" | "or";
   setFilterConjunction: (mode: "and" | "or") => void;
-  // ✅ Add sort state
+
+  // Sorts
   sortPanelOpen: boolean;
   setSortPanelOpen: (open: boolean) => void;
   sortButtonRef: React.RefObject<HTMLButtonElement | null> | null;
   setSortButtonRef: React.Dispatch<
     React.SetStateAction<React.RefObject<HTMLButtonElement | null> | null>
   >;
-  sorts: SortCondition[];
-  setSorts: (sorts: SortCondition[]) => void;
+  sorts: SortType[];
+  setSorts: (sorts: SortType[]) => void;
 
+  // Query key
   dataQueryKey: TableDataQueryInput | null;
   setDataQueryKey: (key: TableDataQueryInput) => void;
 
+  // Busy state
   isBusy: boolean;
   setIsBusy: (v: boolean) => void;
 
-  // currentView: Prisma.View | null;
-  // setCurrentView: (view: Prisma.View) => void;
+  // ✅ NEW: Views
+  views: View[];
+  viewsLoading: boolean;
+  currentViewId: string | null;
+  currentView: View | null;
+  setCurrentViewId: (viewId: string | null) => void;
+  createView: (name: string) => Promise<View>;
+  deleteView: (viewId: string) => Promise<void>;
+  renameView: (viewId: string, name: string) => Promise<void>;
+  duplicateView: (viewId: string) => Promise<View>;
+  isViewDirty: boolean; // Has unsaved changes
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
 
 export function TableViewProvider({ children }: { children: React.ReactNode }) {
+  const params = useParams<{ tableId: string }>();
+  const tableId = params.tableId;
+
+  // Search state
   const [searchBarOpen, setSearchBarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchButtonRef, setSearchButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
+
+  // Filter state
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [filterButtonRef, setFilterButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
@@ -70,27 +91,199 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     "and",
   );
 
-  // ✅ Add sort state
+  // Sort state
   const [sortPanelOpen, setSortPanelOpen] = useState(false);
   const [sortButtonRef, setSortButtonRef] =
     useState<React.RefObject<HTMLButtonElement | null> | null>(null);
-  const [sorts, setSorts] = useState<SortCondition[]>([]);
+  const [sorts, setSorts] = useState<SortType[]>([]);
 
-  // const [currentView, setCurrentView] = useState<Prisma.View | null>(null);
+  // Other state
   const [isBusy, setIsBusy] = useState(false);
   const [dataQueryKey, setDataQueryKey] = useState<TableDataQueryInput | null>(
     null,
   );
 
+  // ✅ NEW: View state
+  const [currentViewId, setCurrentViewId] = useState<string | null>(null);
+  const [isViewDirty, setIsViewDirty] = useState(false);
+  const isLoadingView = useRef(false); // Prevent save while loading
+
+  const utils = api.useUtils();
+
+  // Fetch views for this table
+  const { data: views = [], isLoading: viewsLoading } =
+    api.view.getViews.useQuery({ tableId }, { enabled: !!tableId });
+
+  // Get current view object
+  const currentView = views.find((v) => v.id === currentViewId) ?? null;
+
+  // Auto-select first view when views load
+  useEffect(() => {
+    if (views.length > 0 && !currentViewId) {
+      setCurrentViewId(views[0]!.id);
+    }
+  }, [views, currentViewId]);
+
+  // Load view data when view changes
+  useEffect(() => {
+    if (!currentView) return;
+
+    isLoadingView.current = true;
+
+    // Load filters from view
+    const viewFilters =
+      (currentView.filtersJson as unknown as FilterCondition[]) ?? [];
+    setFilters(viewFilters);
+
+    // Load filter conjunction
+    setFilterConjunction(
+      (currentView.filterConjunction as "and" | "or") ?? "and",
+    );
+
+    // Load sorts from view
+    const viewSorts = (currentView.sortsJson as unknown as SortType[]) ?? [];
+    setSorts(viewSorts);
+
+    // Mark as clean after loading
+    setIsViewDirty(false);
+
+    // Allow saves after a brief delay
+    setTimeout(() => {
+      isLoadingView.current = false;
+    }, 100);
+  }, [currentViewId, currentView?.id]); // Only reload when view ID changes
+
+  // Update view mutation
+  const updateViewMutation = api.view.update.useMutation({
+    onSuccess: () => {
+      utils.view.getViews.invalidate({ tableId });
+      setIsViewDirty(false);
+    },
+  });
+
+  // Auto-save view when filters/sorts change (debounced)
+  useEffect(() => {
+    if (!currentViewId || isLoadingView.current) return;
+
+    // Mark as dirty
+    setIsViewDirty(true);
+
+    const timeout = setTimeout(() => {
+      updateViewMutation.mutate({
+        viewId: currentViewId,
+        filtersJson: filters,
+        filterConjunction,
+        sortsJson: sorts,
+      });
+    }, 1000); // Debounce 1 second
+
+    return () => clearTimeout(timeout);
+  }, [filters, filterConjunction, sorts, currentViewId]);
+
+  // Create view mutation
+  const createViewMutation = api.view.create.useMutation({
+    onSuccess: (newView) => {
+      utils.view.getViews.invalidate({ tableId });
+      setCurrentViewId(newView.id);
+    },
+  });
+
+  const createView = useCallback(
+    async (name: string) => {
+      const newView = await createViewMutation.mutateAsync({
+        tableId,
+        name,
+      });
+      return newView;
+    },
+    [tableId, createViewMutation],
+  );
+
+  // Delete view mutation
+  const deleteViewMutation = api.view.delete.useMutation({
+    onSuccess: () => {
+      utils.view.getViews.invalidate({ tableId });
+    },
+  });
+
+  const deleteView = useCallback(
+    async (viewId: string) => {
+      await deleteViewMutation.mutateAsync({ viewId });
+
+      // If we deleted the current view, select another one
+      if (viewId === currentViewId) {
+        const remainingViews = views.filter((v) => v.id !== viewId);
+        if (remainingViews.length > 0) {
+          setCurrentViewId(remainingViews[0]!.id);
+        } else {
+          setCurrentViewId(null);
+        }
+      }
+    },
+    [deleteViewMutation, currentViewId, views],
+  );
+
+  // Rename view
+  const renameView = useCallback(
+    async (viewId: string, name: string) => {
+      await updateViewMutation.mutateAsync({ viewId, name });
+    },
+    [updateViewMutation],
+  );
+
+  // Duplicate view
+  const duplicateView = useCallback(
+    async (viewId: string) => {
+      const viewToDuplicate = views.find((v) => v.id === viewId);
+      if (!viewToDuplicate) throw new Error("View not found");
+
+      const newView = await createViewMutation.mutateAsync({
+        tableId,
+        name: `${viewToDuplicate.name} (copy)`,
+      });
+
+      // Copy filters/sorts to new view
+      await updateViewMutation.mutateAsync({
+        viewId: newView.id,
+        filtersJson:
+          viewToDuplicate.filtersJson as unknown as FilterCondition[],
+        filterConjunction: viewToDuplicate.filterConjunction as "and" | "or",
+        sortsJson: viewToDuplicate.sortsJson as unknown as SortType[],
+        hiddenCols: viewToDuplicate.hiddenCols as unknown as string[],
+      });
+
+      return newView;
+    },
+    [tableId, views, createViewMutation, updateViewMutation],
+  );
+
+  // Auto-create default view if table has no views
+  useEffect(() => {
+    if (
+      !viewsLoading &&
+      views.length === 0 &&
+      tableId &&
+      !createViewMutation.isPending
+    ) {
+      createViewMutation.mutate({
+        tableId,
+        name: "Grid view",
+      });
+    }
+  }, [viewsLoading, views.length, tableId, createViewMutation.isPending]);
+
   return (
     <TableViewContext.Provider
       value={{
+        // Search
         searchBarOpen,
         setSearchBarOpen,
         searchQuery,
         setSearchQuery,
         searchButtonRef,
         setSearchButtonRef,
+
+        // Filters
         filterPanelOpen,
         setFilterPanelOpen,
         filterButtonRef,
@@ -99,17 +292,34 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         setFilters,
         filterConjunction,
         setFilterConjunction,
+
+        // Sorts
         sortPanelOpen,
         setSortPanelOpen,
         sortButtonRef,
         setSortButtonRef,
         sorts,
         setSorts,
+
+        // Query key
         dataQueryKey,
         setDataQueryKey,
+
+        // Busy
         isBusy,
         setIsBusy,
-        // setCurrentView,
+
+        // Views
+        views,
+        viewsLoading,
+        currentViewId,
+        currentView,
+        setCurrentViewId,
+        createView,
+        deleteView,
+        renameView,
+        duplicateView,
+        isViewDirty,
       }}
     >
       {children}
