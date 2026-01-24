@@ -257,20 +257,31 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     [tableId, views, createViewMutation, updateViewMutation],
   );
 
+  // Add a ref to track if we've already tried to auto-create
+  const hasAttemptedAutoCreate = useRef(false);
+
   // Auto-create default view if table has no views
   useEffect(() => {
-    if (
-      !viewsLoading &&
-      views.length === 0 &&
-      tableId &&
-      !createViewMutation.isPending
-    ) {
+    // Only attempt once per table
+    if (hasAttemptedAutoCreate.current) return;
+
+    // Wait until views have loaded
+    if (viewsLoading) return;
+
+    // Only create if there are no views and we're not already creating
+    if (views.length === 0 && tableId && !createViewMutation.isPending) {
+      hasAttemptedAutoCreate.current = true;
       createViewMutation.mutate({
         tableId,
         name: "Grid view",
       });
     }
   }, [viewsLoading, views.length, tableId, createViewMutation.isPending]);
+
+  // Reset the flag when tableId changes (navigating to a different table)
+  useEffect(() => {
+    hasAttemptedAutoCreate.current = false;
+  }, [tableId]);
 
   return (
     <TableViewContext.Provider

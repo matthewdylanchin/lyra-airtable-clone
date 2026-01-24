@@ -27,27 +27,48 @@ export default function LeftRail() {
   } = useTableView();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [editingViewId, setEditingViewId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [menuOpenViewId, setMenuOpenViewId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   // Filter views by search
   const filteredViews = views.filter((view) =>
     view.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  // Focus input when creating
-  useEffect(() => {
-    if (isCreating) {
-      createInputRef.current?.focus();
+  // Generate next grid name based on view count
+  // If we have 3 views, next is "Grid 4" (regardless of existing names)
+  const getNextGridName = () => {
+    // Count includes "Grid view" as 1, so next is views.length + 1
+    // But if there's no "Grid view", we start from count + 1
+    const count = views.length;
+
+    // First view is "Grid view", subsequent are "Grid 2", "Grid 3", etc.
+    if (count === 0) {
+      return "Grid view";
     }
-  }, [isCreating]);
+
+    return `Grid ${count + 1}`;
+  };
+
+  // Focus input when popup opens
+  useEffect(() => {
+    if (isPopupOpen) {
+      setTimeout(() => {
+        createInputRef.current?.focus();
+        createInputRef.current?.select();
+      }, 50);
+    }
+  }, [isPopupOpen]);
 
   // Focus input when editing
   useEffect(() => {
@@ -56,6 +77,25 @@ export default function LeftRail() {
       editInputRef.current?.select();
     }
   }, [editingViewId]);
+
+  // Close popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        popupRef.current &&
+        !popupRef.current.contains(e.target as Node) &&
+        !createButtonRef.current?.contains(e.target as Node)
+      ) {
+        setIsPopupOpen(false);
+      }
+    };
+
+    if (isPopupOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isPopupOpen]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -72,19 +112,25 @@ export default function LeftRail() {
     }
   }, [menuOpenViewId]);
 
+  const openCreatePopup = () => {
+    setNewViewName(getNextGridName());
+    setIsPopupOpen(true);
+  };
+
   const handleCreateView = async () => {
-    if (!newViewName.trim()) {
-      setIsCreating(false);
-      setNewViewName("");
+    if (!newViewName.trim() || isCreating) {
       return;
     }
 
+    setIsCreating(true);
     try {
       await createView(newViewName.trim());
-      setIsCreating(false);
+      setIsPopupOpen(false);
       setNewViewName("");
     } catch (error) {
       console.error("Failed to create view:", error);
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -136,17 +182,100 @@ export default function LeftRail() {
   return (
     <div className="flex h-full w-[280px] flex-col border-r border-zinc-200 bg-white">
       {/* Header */}
-      <div className="p-3">
+      <div className="relative p-3">
         <button
-          onClick={() => {
-            setIsCreating(true);
-            setNewViewName("Grid view");
-          }}
+          ref={createButtonRef}
+          onClick={openCreatePopup}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-100"
         >
           <Plus className="h-4 w-4 text-zinc-500" />
-          <span className="font-medium">Create view</span>
+          <span className="font-medium">Create new...</span>
         </button>
+
+        {/* Create View Popup */}
+        {isPopupOpen && (
+          <div
+            ref={popupRef}
+            className="absolute top-0 left-full z-50 ml-2 w-[340px] rounded-lg border border-zinc-200 bg-white p-4 shadow-xl"
+          >
+            {/* Name input */}
+            <div className="mb-4">
+              <input
+                ref={createInputRef}
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !isCreating) {
+                    handleCreateView();
+                  } else if (e.key === "Escape") {
+                    setIsPopupOpen(false);
+                  }
+                }}
+                placeholder="View name"
+                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Who can edit section */}
+            <div className="mb-4">
+              <h3 className="mb-2 text-sm font-medium text-zinc-700">
+                Who can edit
+              </h3>
+              <div className="flex gap-4">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="editPermission"
+                    value="collaborative"
+                    defaultChecked
+                    className="h-3.5 w-3.5 text-blue-600"
+                  />
+                  <span className="text-sm text-zinc-700">Collaborative</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="editPermission"
+                    value="personal"
+                    disabled
+                    className="h-3.5 w-3.5 text-blue-600"
+                  />
+                  <span className="text-sm text-zinc-400">Personal</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="editPermission"
+                    value="locked"
+                    disabled
+                    className="h-3.5 w-3.5 text-blue-600"
+                  />
+                  <span className="text-sm text-zinc-400">Locked</span>
+                </label>
+              </div>
+              <p className="mt-1.5 text-xs text-zinc-500">
+                All collaborators can edit the configuration
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setIsPopupOpen(false)}
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateView}
+                disabled={!newViewName.trim() || isCreating}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isCreating ? "Creating..." : "Create new view"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="relative mt-2">
           <Search className="absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
@@ -163,7 +292,7 @@ export default function LeftRail() {
       <div className="flex-1 overflow-y-auto px-2">
         {viewsLoading ? (
           <div className="px-3 py-2 text-sm text-zinc-400">Loading...</div>
-        ) : filteredViews.length === 0 && !isCreating ? (
+        ) : filteredViews.length === 0 ? (
           <div className="px-3 py-2 text-sm text-zinc-400">No views found</div>
         ) : (
           filteredViews.map((view) => (
@@ -285,29 +414,6 @@ export default function LeftRail() {
               )}
             </div>
           ))
-        )}
-
-        {/* Create new view input */}
-        {isCreating && (
-          <div className="flex items-center gap-2 rounded-md px-3 py-2">
-            <Sheet className="h-4 w-4 flex-shrink-0 text-blue-600" />
-            <input
-              ref={createInputRef}
-              value={newViewName}
-              onChange={(e) => setNewViewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleCreateView();
-                } else if (e.key === "Escape") {
-                  setIsCreating(false);
-                  setNewViewName("");
-                }
-              }}
-              onBlur={handleCreateView}
-              placeholder="View name"
-              className="flex-1 rounded border border-blue-500 px-1 py-0.5 text-sm outline-none"
-            />
-          </div>
         )}
       </div>
     </div>

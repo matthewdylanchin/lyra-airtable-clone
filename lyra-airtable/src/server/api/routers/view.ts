@@ -26,7 +26,8 @@ export const viewRouter = createTRPCRouter({
       });
     }),
 
-  // Create a new view
+  // In view.ts - update the create mutation
+
   create: protectedProcedure
     .input(
       z.object({
@@ -50,18 +51,30 @@ export const viewRouter = createTRPCRouter({
         throw new TRPCError({ code: "UNAUTHORIZED" });
       }
 
-      // Check for duplicate name
-      const existing = await ctx.db.view.findUnique({
-        where: {
-          tableId_name: { tableId, name },
-        },
-      });
+      // Check for duplicate name and generate unique name if needed
+      let finalName = name;
+      let counter = 1;
 
-      if (existing) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "View name must be unique",
+      while (true) {
+        const existing = await ctx.db.view.findUnique({
+          where: {
+            tableId_name: { tableId, name: finalName },
+          },
         });
+
+        if (!existing) break;
+
+        // Generate a new name with counter
+        counter++;
+        finalName = `${name} ${counter}`;
+
+        // Safety limit
+        if (counter > 100) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Could not generate unique view name",
+          });
+        }
       }
 
       // Get next order value
@@ -72,7 +85,7 @@ export const viewRouter = createTRPCRouter({
       const newView = await ctx.db.view.create({
         data: {
           tableId,
-          name,
+          name: finalName,
           order: viewCount,
           filtersJson: [],
           sortsJson: [],
@@ -83,7 +96,6 @@ export const viewRouter = createTRPCRouter({
 
       return newView;
     }),
-
   // Update a view (filters, sorts, hidden columns, name)
   update: protectedProcedure
     .input(
