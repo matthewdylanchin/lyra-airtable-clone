@@ -40,7 +40,7 @@ export default function AppTopBar() {
   // Rename base mutation
   const renameBase = api.base.rename.useMutation({
     onSuccess: () => {
-      utils.base.getById.invalidate(baseId);
+      void utils.base.getById.invalidate(baseId);
     },
   });
 
