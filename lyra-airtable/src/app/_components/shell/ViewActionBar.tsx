@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import {
   ChevronDown,
   Filter,
@@ -18,6 +18,7 @@ import {
 import { useParams } from "next/navigation";
 import { api } from "@/trpc/react";
 import { useTableView } from "@/app/base/[baseId]/table/[tableId]/TableViewContext";
+import HideFieldsPanel from "@/app/base/[baseId]/table/[tableId]/Components/HideFieldsPanel";
 
 export default function ViewActionBar() {
   const { tableId } = useParams<{ tableId: string }>();
@@ -39,6 +40,10 @@ export default function ViewActionBar() {
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const sortButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  const [hideFieldsPanelOpen, setHideFieldsPanelOpen] = useState(false);
+  const hideFieldsButtonRef = useRef<HTMLButtonElement>(null);
+
+  const { hiddenColumnIds } = useTableView(); // ✅ Get hidden columns
   // Set the refs in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
@@ -156,8 +161,17 @@ export default function ViewActionBar() {
         </button>
 
         <div className="ml-auto flex items-center gap-1 text-sm text-zinc-700">
-          <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
-            <EyeOff className="h-4 w-4 text-zinc-500" /> Hide fields
+          <button
+            ref={hideFieldsButtonRef}
+            onClick={() => setHideFieldsPanelOpen(true)}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100 ${
+              hiddenColumnIds.length > 0 ? "bg-sky-100 text-zinc-700" : ""
+            }`}
+          >
+            <EyeOff className="h-4 w-4 text-zinc-500" />
+            {hiddenColumnIds.length > 0
+              ? `${hiddenColumnIds.length} hidden field${hiddenColumnIds.length > 1 ? "s" : ""}`
+              : "Hide fields"}
           </button>
 
           {/* Filter button with dynamic text */}
@@ -228,6 +242,12 @@ export default function ViewActionBar() {
             <Search className="h-4 w-4 text-zinc-600" />
           </button>
         </div>
+              <HideFieldsPanel
+        isOpen={hideFieldsPanelOpen}
+        onClose={() => setHideFieldsPanelOpen(false)}
+        columns={data?.pages[0]?.columns ?? []}
+        triggerRef={hideFieldsButtonRef}
+      />
       </div>
     </div>
   );

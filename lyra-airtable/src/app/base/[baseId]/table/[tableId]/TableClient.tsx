@@ -54,6 +54,7 @@ type TableDataType = {
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
+  const {hiddenColumnIds} = useTableView();
 
   const {
     searchBarOpen,
@@ -485,6 +486,7 @@ export default function TableClient() {
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
+        hiddenColumnIds
       }),
     [
       data,
@@ -498,6 +500,7 @@ export default function TableClient() {
       currentMatch,
       filteredColumnIds,
       sortedColumnIds,
+      hiddenColumnIds,
     ],
   );
 

@@ -168,6 +168,7 @@ export function createColumns({
   currentMatch,
   filteredColumnIds,
   sortedColumnIds,
+  hiddenColumnIds,
 }: {
   data: TableData | undefined;
   editing: Editing; // ✅ STATE
@@ -195,6 +196,7 @@ export function createColumns({
   } | null;
   filteredColumnIds?: Set<string>;
   sortedColumnIds?: Set<string>;
+  hiddenColumnIds?: string[]; // ✅ Add type
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -235,103 +237,105 @@ export function createColumns({
       },
     },
 
-    ...data.columns.map((c) => {
-      // Check if this column is filtered or sorted
-      const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
-      const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
+    ...data.columns
+      .filter((c) => !hiddenColumnIds?.includes(c.id))
+      .map((c) => {
+        // Check if this column is filtered or sorted
+        const isFilteredColumn = filteredColumnIds?.has(c.id) ?? false;
+        const isSortedColumn = sortedColumnIds?.has(c.id) ?? false;
 
-      return {
-        id: c.id,
-        accessorFn: (row: TableRow) => row[c.id] ?? null,
-        size: getColumnWidth(c.name, c.type),
-        minSize: 50,
-
-        meta: {
+        return {
           id: c.id,
-          name: c.name,
-          type: c.type,
-        },
+          accessorFn: (row: TableRow) => row[c.id] ?? null,
+          size: getColumnWidth(c.name, c.type),
+          minSize: 50,
 
-        header: () => (
-          <ColumnHeader
-            column={{ id: c.id, name: c.name, type: c.type }}
-            tableId={data.table.id}
-            onInsert={onInsert}
-          />
-        ),
-        cell: (info: CellContext<TableRow, CellValue>) => {
-          const value = info.getValue();
-          const rowId = info.row.original.__rowId;
-          const rowIndex = info.row.index;
-          const colIndex = info.column.getIndex();
+          meta: {
+            id: c.id,
+            name: c.name,
+            type: c.type,
+          },
 
-          const isSelected =
-            selectedCell?.rowIndex === rowIndex &&
-            selectedCell?.colIndex === colIndex;
+          header: () => (
+            <ColumnHeader
+              column={{ id: c.id, name: c.name, type: c.type }}
+              tableId={data.table.id}
+              onInsert={onInsert}
+            />
+          ),
+          cell: (info: CellContext<TableRow, CellValue>) => {
+            const value = info.getValue();
+            const rowId = info.row.original.__rowId;
+            const rowIndex = info.row.index;
+            const colIndex = info.column.getIndex();
 
-          // ✅ Use state for isEditing check (triggers re-render when editing starts/stops)
-          const isEditing =
-            editing?.rowId === rowId && editing?.columnId === c.id;
+            const isSelected =
+              selectedCell?.rowIndex === rowIndex &&
+              selectedCell?.colIndex === colIndex;
 
-          const isNumberCol = c.type === "NUMBER";
+            // ✅ Use state for isEditing check (triggers re-render when editing starts/stops)
+            const isEditing =
+              editing?.rowId === rowId && editing?.columnId === c.id;
 
-          const isPending =
-            upsert.isPending &&
-            upsert.variables?.rowId === rowId &&
-            upsert.variables?.columnId === c.id;
+            const isNumberCol = c.type === "NUMBER";
 
-          // Check if this cell matches the search query
-          const cellValueStr = value != null ? String(value) : "";
-          const searchLower = searchQuery?.toLowerCase() ?? "";
-          const cellLower = cellValueStr.toLowerCase();
+            const isPending =
+              upsert.isPending &&
+              upsert.variables?.rowId === rowId &&
+              upsert.variables?.columnId === c.id;
 
-          const isMatch =
-            searchQuery && cellValueStr && cellLower.includes(searchLower);
+            // Check if this cell matches the search query
+            const cellValueStr = value != null ? String(value) : "";
+            const searchLower = searchQuery?.toLowerCase() ?? "";
+            const cellLower = cellValueStr.toLowerCase();
 
-          // Check if this is the CURRENT focused match (dark amber)
-          const isCurrentMatch =
-            isMatch &&
-            currentMatch?.rowId === rowId &&
-            currentMatch?.columnId === c.id;
+            const isMatch =
+              searchQuery && cellValueStr && cellLower.includes(searchLower);
 
-          return (
-            <div
-              className={cn(
-                "relative flex h-9 w-full cursor-default items-center outline-none",
-                isSelected && "ring-2 ring-blue-600 ring-inset",
-                !isEditing && "hover:bg-zinc-50",
-                // Column highlighting priority: filter (green) > sort (orange)
-                // If filtered, use green regardless of sort state
-                isFilteredColumn && "bg-emerald-50",
-                // If sorted but NOT filtered, use orange
-                isSortedColumn && !isFilteredColumn && "bg-orange-50",
-                // Search highlighting (highest priority)
-                isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
-                isMatch &&
-                  !isCurrentMatch &&
-                  "border-l-2 border-amber-100 bg-amber-100",
-              )}
-              onClick={() => setSelectedCell({ rowIndex, colIndex })}
-              onDoubleClick={() => startEdit(rowId, c.id, "append")}
-            >
-              {isEditing ? (
-                <EditInput
-                  rowIndex={rowIndex}
-                  columnId={c.id}
-                  isNumberCol={isNumberCol}
-                  draftRef={draftRef}
-                  commitEdit={commitEdit}
-                  cancelEdit={cancelEdit}
-                />
-              ) : (
-                <span className="block truncate px-2.5 text-sm">
-                  {String(value ?? "")}
-                </span>
-              )}
-            </div>
-          );
-        },
-      };
-    }),
+            // Check if this is the CURRENT focused match (dark amber)
+            const isCurrentMatch =
+              isMatch &&
+              currentMatch?.rowId === rowId &&
+              currentMatch?.columnId === c.id;
+
+            return (
+              <div
+                className={cn(
+                  "relative flex h-9 w-full cursor-default items-center outline-none",
+                  isSelected && "ring-2 ring-blue-600 ring-inset",
+                  !isEditing && "hover:bg-zinc-50",
+                  // Column highlighting priority: filter (green) > sort (orange)
+                  // If filtered, use green regardless of sort state
+                  isFilteredColumn && "bg-emerald-50",
+                  // If sorted but NOT filtered, use orange
+                  isSortedColumn && !isFilteredColumn && "bg-orange-50",
+                  // Search highlighting (highest priority)
+                  isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
+                  isMatch &&
+                    !isCurrentMatch &&
+                    "border-l-2 border-amber-100 bg-amber-100",
+                )}
+                onClick={() => setSelectedCell({ rowIndex, colIndex })}
+                onDoubleClick={() => startEdit(rowId, c.id, "append")}
+              >
+                {isEditing ? (
+                  <EditInput
+                    rowIndex={rowIndex}
+                    columnId={c.id}
+                    isNumberCol={isNumberCol}
+                    draftRef={draftRef}
+                    commitEdit={commitEdit}
+                    cancelEdit={cancelEdit}
+                  />
+                ) : (
+                  <span className="block truncate px-2.5 text-sm">
+                    {String(value ?? "")}
+                  </span>
+                )}
+              </div>
+            );
+          },
+        };
+      }),
   ];
 }
