@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef } from "react";
+import type { MutableRefObject } from "react";
 import type { ColumnDef, CellContext } from "@tanstack/react-table";
 import type {
   TableData,
@@ -75,16 +77,91 @@ function getColumnWidth(columnName: string, columnType?: string): number {
   return 150;
 }
 
+// ✅ Separate component for the input (manages its own local state)
+function EditInput({
+  rowIndex,
+  columnId,
+  isNumberCol,
+  draftRef,
+  commitEdit,
+  cancelEdit,
+}: {
+  rowIndex: number;
+  columnId: string;
+  isNumberCol: boolean;
+  draftRef: MutableRefObject<string>;
+  commitEdit: () => void;
+  cancelEdit: () => void;
+}) {
+  // ✅ Local state for the input - only this component re-renders on typing
+  const [localValue, setLocalValue] = useState(draftRef.current);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local value to ref on every change
+  useEffect(() => {
+    draftRef.current = localValue;
+  }, [localValue, draftRef]);
+
+  // Focus on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      key={`edit-${rowIndex}-${columnId}`}
+      value={localValue}
+      onChange={(e) => {
+        const val = e.target.value;
+
+        if (isNumberCol) {
+          if (/^-?\d*\.?\d*$/.test(val)) {
+            setLocalValue(val);
+          }
+          return;
+        }
+
+        setLocalValue(val);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          commitEdit();
+          return;
+        }
+
+        if (e.key === "Tab") {
+          e.preventDefault();
+          commitEdit();
+          return;
+        }
+
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelEdit();
+          return;
+        }
+      }}
+      onBlur={() => {
+        commitEdit();
+      }}
+      className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
+      style={{ boxShadow: "none" }}
+    />
+  );
+}
+
 export function createColumns({
   data,
-  editing,
-  draft,
+  editing, // ✅ Keep editing as STATE (needed to trigger re-render when editing starts/stops)
+  draftRef, // ✅ Use ref for draft (avoids re-render on every keystroke)
   selectedCell,
   setSelectedCell,
   startEdit,
   commitEdit,
   cancelEdit,
-  setDraft,
   onInsert,
   upsert,
   searchQuery,
@@ -93,8 +170,8 @@ export function createColumns({
   sortedColumnIds,
 }: {
   data: TableData | undefined;
-  editing: Editing;
-  draft: string;
+  editing: Editing; // ✅ STATE
+  draftRef: MutableRefObject<string>; // ✅ REF
   selectedCell: SelectedCell;
   setSelectedCell: (v: SelectedCell) => void;
   startEdit: (
@@ -104,7 +181,6 @@ export function createColumns({
   ) => void;
   commitEdit: () => void;
   cancelEdit: () => void;
-  setDraft: (v: string) => void;
   onInsert: (
     insert: ColumnInsertPosition,
     position: { top: number; left: number },
@@ -193,6 +269,7 @@ export function createColumns({
             selectedCell?.rowIndex === rowIndex &&
             selectedCell?.colIndex === colIndex;
 
+          // ✅ Use state for isEditing check (triggers re-render when editing starts/stops)
           const isEditing =
             editing?.rowId === rowId && editing?.columnId === c.id;
 
@@ -238,47 +315,13 @@ export function createColumns({
               onDoubleClick={() => startEdit(rowId, c.id, "append")}
             >
               {isEditing ? (
-                <input
-                  key={`edit-${rowIndex}-${c.id}`}
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => {
-                    const val = e.target.value;
-
-                    if (isNumberCol) {
-                      if (/^-?\d*\.?\d*$/.test(val)) {
-                        setDraft(val);
-                      }
-                      return;
-                    }
-
-                    setDraft(val);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      commitEdit();
-                      return;
-                    }
-
-                    if (e.key === "Tab") {
-                      e.preventDefault();
-                      commitEdit();
-                      return;
-                    }
-
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      cancelEdit();
-                      return;
-                    }
-                  }}
-                  onBlur={() => {
-                    commitEdit();
-                  }}
-                  className="absolute inset-0 h-full w-full border-none bg-transparent px-2.5 text-sm outline-none focus:ring-0 focus:outline-none"
-                  style={{ boxShadow: "none" }}
+                <EditInput
+                  rowIndex={rowIndex}
+                  columnId={c.id}
+                  isNumberCol={isNumberCol}
+                  draftRef={draftRef}
+                  commitEdit={commitEdit}
+                  cancelEdit={cancelEdit}
                 />
               ) : (
                 <span className="block truncate px-2.5 text-sm">

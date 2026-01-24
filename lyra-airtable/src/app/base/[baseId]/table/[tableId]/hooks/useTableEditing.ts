@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { TableData, Cell, Editing, CellUpsertMutation } from "../types";
 
@@ -29,6 +29,10 @@ export function useTableEditing({
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // ✅ Refs for synchronous access (used in commitEdit)
+  const editingRef = useRef<Editing>(null);
+  const draftRef = useRef<string>("");
+
   const startEdit = (
     rowId: string,
     columnId: string,
@@ -44,38 +48,51 @@ export function useTableEditing({
         ? (cell?.numberValue ?? "")
         : (cell?.textValue ?? "");
 
-    setDraft(mode === "append" ? String(value) : "");
-    setEditing({ rowId, columnId, originalValue: String(value) });
+    const newDraft = mode === "append" ? String(value) : "";
+    const newEditing = { rowId, columnId, originalValue: String(value) };
+
+    // ✅ Update refs (for synchronous access in commitEdit)
+    draftRef.current = newDraft;
+    editingRef.current = newEditing;
+
+    // ✅ Update state (to trigger re-render so input appears)
+    setDraft(newDraft);
+    setEditing(newEditing);
   };
 
   const cancelEdit = () => {
+    editingRef.current = null;
+    draftRef.current = "";
     setEditing(null);
     setDraft("");
     setLocalError(null);
   };
 
-  // ✅ NEW: Function to update the editing rowId when temp ID is replaced
+  const setDraftWithRef = useCallback((value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  }, []);
+
+  // ✅ Function to update the editing rowId when temp ID is replaced
   const updateEditingRowId = useCallback((tempId: string, realId: string) => {
     setEditing((prev) => {
       if (prev?.rowId === tempId) {
-        console.log(
-          `🔄 [updateEditingRowId] Updating editing state: ${tempId} → ${realId}`,
-        );
-        return { ...prev, rowId: realId };
+        const updated = { ...prev, rowId: realId };
+        editingRef.current = updated;
+        return updated;
       }
       return prev;
     });
   }, []);
 
-  // ✅ NEW: Function to update the editing columnId when temp column ID is replaced
+  // ✅ Function to update the editing columnId when temp column ID is replaced
   const updateEditingColumnId = useCallback(
     (tempId: string, realId: string) => {
       setEditing((prev) => {
         if (prev?.columnId === tempId) {
-          console.log(
-            `🔄 [updateEditingColumnId] Updating editing state: ${tempId} → ${realId}`,
-          );
-          return { ...prev, columnId: realId };
+          const updated = { ...prev, columnId: realId };
+          editingRef.current = updated;
+          return updated;
         }
         return prev;
       });
@@ -84,17 +101,18 @@ export function useTableEditing({
   );
 
   const commitEdit = () => {
-    console.log("🟢 [commitEdit] START", performance.now());
+    const currentEditing = editingRef.current;
+    const currentDraft = draftRef.current;
 
-    if (!editing) {
-      console.log("⚠️ [commitEdit] No editing state");
+    if (!currentEditing) {
       return;
     }
 
-    const { rowId, columnId, originalValue } = editing;
+    const { rowId, columnId, originalValue } = currentEditing;
 
-    if (draft === originalValue) {
-      console.log("⚠️ [commitEdit] No changes");
+    if (currentDraft === originalValue) {
+      editingRef.current = null;
+      draftRef.current = "";
       setEditing(null);
       setDraft("");
       return;
@@ -103,15 +121,17 @@ export function useTableEditing({
     const column = data?.columns.find((c) => c.id === columnId);
     const isNumber = column?.type === "NUMBER";
 
-    const textValue = isNumber ? null : draft;
-    const numberValue = isNumber ? Number(draft) : null;
+    const textValue = isNumber ? null : currentDraft;
+    const numberValue = isNumber ? Number(currentDraft) : null;
 
     // ✅ INSTANT: Update local state immediately
     if (onCommit) {
-      onCommit(rowId, columnId, draft);
+      onCommit(rowId, columnId, currentDraft);
     }
 
     // ✅ Clear editing state immediately
+    editingRef.current = null;
+    draftRef.current = "";
     setEditing(null);
     setDraft("");
     setLocalError(null);
@@ -121,12 +141,6 @@ export function useTableEditing({
     const isTempColumn = columnId.startsWith("temp-");
 
     if (isTempRow || isTempColumn) {
-      console.log(
-        "⏳ [commitEdit] Temp row/column detected, queueing edit for later",
-      );
-
-      // ✅ Queue by BOTH rowId and columnId for temp columns
-      // Use a composite key to handle both cases
       const queueKey = isTempRow ? rowId : `col:${columnId}`;
 
       if (pendingEditsRef) {
@@ -136,15 +150,11 @@ export function useTableEditing({
           columnId,
           textValue,
           numberValue,
-          // ✅ NEW: Also store rowId for column-based queuing
           rowId,
-        } as PendingEdit & { rowId?: string };
+        } as PendingEdit;
 
-        // Check if we already have an edit for this cell
         const existingIndex = existing.findIndex(
-          (e) =>
-            e.columnId === columnId &&
-            (e as PendingEdit & { rowId?: string }).rowId === rowId,
+          (e) => e.columnId === columnId && e.rowId === rowId,
         );
 
         if (existingIndex >= 0) {
@@ -154,19 +164,10 @@ export function useTableEditing({
         }
 
         pendingEditsRef.current.set(queueKey, existing);
-        console.log("📝 [commitEdit] Queued edit:", {
-          queueKey,
-          rowId,
-          columnId,
-          textValue,
-          numberValue,
-        });
       }
 
       return;
     }
-
-    console.log("🟡 [commitEdit] Calling upsert.mutate", performance.now());
 
     upsert.mutate(
       {
@@ -177,15 +178,12 @@ export function useTableEditing({
       },
       {
         onError: (error) => {
-          console.log("🔴 [commitEdit] Error:", error);
           setLocalError(
             error instanceof Error ? error.message : "Failed to save",
           );
         },
       },
     );
-
-    console.log("🟢 [commitEdit] END", performance.now());
   };
 
   return {
@@ -195,8 +193,10 @@ export function useTableEditing({
     startEdit,
     cancelEdit,
     commitEdit,
-    setDraft,
+    setDraft: setDraftWithRef,
     updateEditingRowId,
-    updateEditingColumnId, // ✅ NEW: Export this
+    updateEditingColumnId,
+    editingRef,
+    draftRef,
   };
 }
