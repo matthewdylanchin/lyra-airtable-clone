@@ -37,15 +37,19 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
       void utils.table.listByBase.invalidate({ baseId });
     },
     onError: (err) => {
-      console.error("Table creation error:", err); // ✅ Add logging
+      // ✅ Log the full error object
+      console.error("Full error object:", err);
+      console.error("Error data:", err.data);
+      console.error("Error shape:", err.shape);
+      console.error("Error message:", err.message);
 
       if (err.data?.code === "CONFLICT") {
         setNameError(err.message);
         return;
       }
 
-      // ✅ Show the actual error message
-      setNameError(err.message || "Something went wrong");
+      // ✅ Show more detail
+      setNameError(err.message ?? err.data?.code ?? "Something went wrong");
     },
     onSettled: () => {
       setIsSubmitting(false);

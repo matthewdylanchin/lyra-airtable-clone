@@ -3,7 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { faker } from "@faker-js/faker";
 import { TRPCError } from "@trpc/server";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
-import { Prisma } from "generated/prisma"; // ✅ Add this import - adjust path if needed
+import { Prisma } from "generated/prisma";
 
 export const tableRouter = createTRPCRouter({
   listByBase: protectedProcedure
@@ -30,17 +30,29 @@ export const tableRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // ✅ Log 1: Start of mutation
+      console.log("🚀 [table.create] Starting mutation with input:", input);
+      console.log("🚀 [table.create] User ID:", ctx.session.user.id);
+
       const base = await ctx.db.base.findFirst({
         where: { id: input.baseId, ownerId: ctx.session.user.id },
         select: { id: true },
       });
 
+      // ✅ Log 2: Base check
+      console.log("🔍 [table.create] Base found:", base);
+
       if (!base) {
+        console.error("❌ [table.create] Unauthorized - base not found or user not owner");
         throw new TRPCError({ code: "UNAUTHORIZED" });
       }
 
       try {
+        console.log("📝 [table.create] Starting transaction...");
+        
         const result = await ctx.db.$transaction(async (tx) => {
+          // ✅ Log 3: Creating table
+          console.log("📝 [table.create] Creating table record...");
           const table = await tx.table.create({
             data: {
               baseId: input.baseId,
@@ -53,7 +65,10 @@ export const tableRouter = createTRPCRouter({
               updatedAt: true,
             },
           });
+          console.log("✅ [table.create] Table created:", table.id);
 
+          // ✅ Log 4: Creating columns
+          console.log("📝 [table.create] Creating columns...");
           await tx.column.createMany({
             data: [
               { tableId: table.id, name: "Name", type: "TEXT", order: 0 },
@@ -69,13 +84,19 @@ export const tableRouter = createTRPCRouter({
               },
             ],
           });
+          console.log("✅ [table.create] Columns created");
 
+          // ✅ Log 5: Fetching columns
+          console.log("📝 [table.create] Fetching columns...");
           const columns = await tx.column.findMany({
             where: { tableId: table.id },
             orderBy: { order: "asc" },
             select: { id: true, name: true },
           });
+          console.log("✅ [table.create] Columns fetched:", columns.length);
 
+          // ✅ Log 6: Creating rows
+          console.log("📝 [table.create] Creating 20 rows...");
           const rows = await Promise.all(
             Array.from({ length: 20 }).map((_, i) =>
               tx.row.create({
@@ -87,7 +108,10 @@ export const tableRouter = createTRPCRouter({
               }),
             ),
           );
+          console.log("✅ [table.create] Rows created:", rows.length);
 
+          // ✅ Log 7: Creating view
+          console.log("📝 [table.create] Creating default view...");
           await tx.view.create({
             data: {
               tableId: table.id,
@@ -99,86 +123,109 @@ export const tableRouter = createTRPCRouter({
               filterConjunction: "and",
             },
           });
+          console.log("✅ [table.create] View created");
 
+          // ✅ Log 8: Creating cells
+          console.log("📝 [table.create] Creating cells...");
+          const cellsData = rows.flatMap((r) =>
+            columns.map((c) => {
+              switch (c.name) {
+                case "Name":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.person.fullName(),
+                  };
+
+                case "Notes":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.lorem.sentence(),
+                  };
+
+                case "Assignee":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.person.firstName(),
+                  };
+
+                case "Status":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.helpers.arrayElement([
+                      "Todo",
+                      "In Progress",
+                      "Done",
+                    ]),
+                  };
+
+                case "Attachment":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.system.fileName(),
+                  };
+
+                case "Attachment Summary":
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: faker.lorem.words(3),
+                  };
+
+                default:
+                  return {
+                    rowId: r.id,
+                    columnId: c.id,
+                    textValue: null,
+                  };
+              }
+            }),
+          );
+
+          console.log(`📝 [table.create] Creating ${cellsData.length} cells...`);
           await tx.cell.createMany({
-            data: rows.flatMap((r) =>
-              columns.map((c) => {
-                switch (c.name) {
-                  case "Name":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.person.fullName(),
-                    };
-
-                  case "Notes":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.lorem.sentence(),
-                    };
-
-                  case "Assignee":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.person.firstName(),
-                    };
-
-                  case "Status":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.helpers.arrayElement([
-                        "Todo",
-                        "In Progress",
-                        "Done",
-                      ]),
-                    };
-
-                  case "Attachment":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.system.fileName(),
-                    };
-
-                  case "Attachment Summary":
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: faker.lorem.words(3),
-                    };
-
-                  default:
-                    return {
-                      rowId: r.id,
-                      columnId: c.id,
-                      textValue: null,
-                    };
-                }
-              }),
-            ),
+            data: cellsData,
           });
+          console.log("✅ [table.create] Cells created");
 
+          console.log("✅ [table.create] Transaction complete");
           return table;
         });
 
+        console.log("🎉 [table.create] Mutation successful:", result);
         return result;
+        
       } catch (err: unknown) {
-        if (
-          err instanceof PrismaClientKnownRequestError &&
-          err.code === "P2002"
-        ) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Please enter a unique table name",
-          });
+        // ✅ Log 9: Detailed error logging
+        console.error("❌ [table.create] Error occurred:", err);
+        console.error("❌ [table.create] Error type:", err?.constructor?.name);
+        
+        if (err instanceof Error) {
+          console.error("❌ [table.create] Error message:", err.message);
+          console.error("❌ [table.create] Error stack:", err.stack);
+        }
+        
+        if (err instanceof PrismaClientKnownRequestError) {
+          console.error("❌ [table.create] Prisma error code:", err.code);
+          console.error("❌ [table.create] Prisma error meta:", err.meta);
+          
+          if (err.code === "P2002") {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Please enter a unique table name",
+            });
+          }
         }
 
+        // ✅ Pass the actual error message to the frontend
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create table",
+          message: err instanceof Error ? err.message : "Failed to create table",
+          cause: err,
         });
       }
     }),
