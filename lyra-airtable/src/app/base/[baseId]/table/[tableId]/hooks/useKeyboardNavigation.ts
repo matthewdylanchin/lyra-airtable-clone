@@ -19,6 +19,7 @@ export function useKeyboardNavigation({
     rowId: string,
     columnId: string,
     mode?: "replace" | "append",
+    initialChar?: string,
   ) => void;
   setDraft: (v: string) => void;
 }) {
@@ -96,7 +97,7 @@ export function useKeyboardNavigation({
           const row = rows[rowIndex];
           const col = cols[colIndex];
           if (!row || !col || col.id === "__index") return;
-          startEdit(row.original.__rowId, col.id, "append");
+          startEdit(row.original.__rowId, col.id, "append"); // ✅ Pass the character
           e.preventDefault();
           return;
         }
