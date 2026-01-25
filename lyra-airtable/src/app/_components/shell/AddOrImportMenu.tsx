@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "@/trpc/react";
+import { useRouter } from "next/navigation"; // ✅ Add this
 
 export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   const [open, setOpen] = useState(false);
@@ -10,26 +11,44 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const utils = api.useUtils();
+  const router = useRouter(); // ✅ Add this
 
   const [nameError, setNameError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false); // ✅ Use state instead of ref
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const create = api.table.create.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (newTable) => {
+      // ✅ Use the returned data
       setOpen(false);
       setName("");
       setNameError(null);
-      await utils.table.listByBase.invalidate();
+
+      // ✅ Option 1: Optimistically update the cache with the new table
+      utils.table.listByBase.setData({ baseId }, (old) => {
+        if (!old) return [newTable];
+        return [...old, newTable];
+      });
+
+      // ✅ Option 2: Navigate to the new table (forces a fresh data fetch)
+      // Uncomment this if you want to redirect to the new table
+      router.push(`/base/${baseId}/table/${newTable.id}`);
+
+      // ✅ Invalidate in the background (don't await)
+      void utils.table.listByBase.invalidate({ baseId });
     },
     onError: (err) => {
+      console.error("Table creation error:", err); // ✅ Add logging
+
       if (err.data?.code === "CONFLICT") {
         setNameError(err.message);
         return;
       }
-      setNameError("Something went wrong");
+
+      // ✅ Show the actual error message
+      setNameError(err.message || "Something went wrong");
     },
     onSettled: () => {
-      setIsSubmitting(false); // ✅ Reset after mutation completes
+      setIsSubmitting(false);
     },
   });
 
@@ -37,6 +56,7 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
     { baseId },
     { enabled: !!baseId },
   );
+
   const nextDefaultName = useMemo(() => `Table ${tables.length + 1}`, [tables]);
 
   useEffect(() => {
@@ -58,12 +78,11 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
   }, [open]);
 
   const handleCreate = () => {
-    // ✅ Guard: Check both state AND mutation status
     if (isSubmitting || create.isPending || name.trim().length === 0) {
       return;
     }
 
-    setIsSubmitting(true); // ✅ Set immediately before mutation
+    setIsSubmitting(true);
     setNameError(null);
 
     create.mutate({ baseId, name: name.trim() });
@@ -77,7 +96,7 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
         onClick={() => {
           setOpen((v) => !v);
           setName(nextDefaultName);
-          setNameError(null); // ✅ Clear error when opening
+          setNameError(null);
         }}
         className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-white/60"
       >
@@ -110,6 +129,7 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
                 }
               }}
               disabled={isSubmitting}
+              autoFocus // ✅ Add autofocus
             />
 
             {nameError && (
