@@ -37,6 +37,7 @@ export function useTableEditing({
     rowId: string,
     columnId: string,
     mode: "replace" | "append" = "replace",
+    initialChar?: string, // ✅ Add optional parameter
   ) => {
     setLocalError(null);
 
@@ -48,7 +49,7 @@ export function useTableEditing({
         ? (cell?.numberValue ?? "")
         : (cell?.textValue ?? "");
 
-    const newDraft = mode === "append" ? String(value) : "";
+    const newDraft = initialChar ?? (mode === "append" ? String(value) : "");
     const newEditing = { rowId, columnId, originalValue: String(value) };
 
     // ✅ Update refs (for synchronous access in commitEdit)
@@ -100,6 +101,7 @@ export function useTableEditing({
     [],
   );
 
+  // In useTableEditing.ts - update onCommit immediately, NOT deferred
   const commitEdit = () => {
     const currentEditing = editingRef.current;
     const currentDraft = draftRef.current;
@@ -124,12 +126,12 @@ export function useTableEditing({
     const textValue = isNumber ? null : currentDraft;
     const numberValue = isNumber ? Number(currentDraft) : null;
 
-    // ✅ INSTANT: Update local state immediately
+    // ✅ INSTANT: Update local state immediately (NO setTimeout)
     if (onCommit) {
       onCommit(rowId, columnId, currentDraft);
     }
 
-    // ✅ Clear editing state immediately
+    // ✅ Clear editing state immediately (this makes tab feel instant)
     editingRef.current = null;
     draftRef.current = "";
     setEditing(null);
@@ -169,23 +171,25 @@ export function useTableEditing({
       return;
     }
 
-    upsert.mutate(
-      {
-        rowId,
-        columnId,
-        textValue,
-        numberValue,
-      },
-      {
-        onError: (error) => {
-          setLocalError(
-            error instanceof Error ? error.message : "Failed to save",
-          );
+    // ✅ Defer ONLY the mutation (not the UI update)
+    setTimeout(() => {
+      upsert.mutate(
+        {
+          rowId,
+          columnId,
+          textValue,
+          numberValue,
         },
-      },
-    );
+        {
+          onError: (error) => {
+            setLocalError(
+              error instanceof Error ? error.message : "Failed to save",
+            );
+          },
+        },
+      );
+    }, 0);
   };
-
   return {
     editing,
     draft,

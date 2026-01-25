@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import ColumnHeader from "@/app/_components/column/ColumnHeader";
 import type { ColumnInsertPosition } from "./types";
 import type { CellUpsertMutation } from "./types";
+import { memo } from "react";
 
 /**
  * Helper function to estimate appropriate column width based on column type and name
@@ -78,7 +79,7 @@ function getColumnWidth(columnName: string, columnType?: string): number {
 }
 
 // ✅ Separate component for the input (manages its own local state)
-function EditInput({
+const EditInput = memo(function EditInput({
   rowIndex,
   columnId,
   isNumberCol,
@@ -151,7 +152,7 @@ function EditInput({
       style={{ boxShadow: "none" }}
     />
   );
-}
+});
 
 export function createColumns({
   data,
