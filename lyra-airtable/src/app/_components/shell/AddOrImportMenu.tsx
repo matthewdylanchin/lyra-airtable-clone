@@ -49,7 +49,7 @@ export default function AddOrImportMenu({ baseId }: { baseId: string }) {
       }
 
       // ✅ Show more detail
-      setNameError(err.message || err.data?.code || "Something went wrong");
+      setNameError(err.message ?? err.data?.code ?? "Something went wrong");
     },
     onSettled: () => {
       setIsSubmitting(false);
