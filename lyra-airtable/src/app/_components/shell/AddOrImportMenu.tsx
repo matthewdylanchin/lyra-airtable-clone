@@ -144,7 +144,11 @@ export default function AddOrImportMenu({
 
           <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
             <div className="flex h-5 w-5 items-center justify-center">
-              <Layers className="h-4 w-4 text-blue-600" />
+              <img
+                src="/airtable.png"
+                alt="Airtable"
+                className="h-4 w-4 object-contain"
+              />
             </div>
             <span>Airtable base</span>
           </button>
