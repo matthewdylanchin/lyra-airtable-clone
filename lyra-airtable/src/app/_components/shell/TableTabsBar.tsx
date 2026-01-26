@@ -51,28 +51,6 @@ export default function TableTabsBar() {
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const utils = api.useUtils();
 
-  if (!baseId) {
-    return (
-      <div className="relative h-[35px] border-b border-zinc-200 bg-violet-50" />
-    );
-  }
-
-  const { data: tablesData, isLoading } = api.table.listByBase.useQuery(
-    { baseId },
-    { enabled: !!baseId },
-  );
-
-  // Sort tables by createdAt to ensure new tables appear at the end
-  // Filter out tables that are being deleted
-  const tables = (tablesData as TableWithLoading[] | undefined)
-    ?.slice()
-    .filter((t) => !t._isDeleting)
-    .sort(
-      (a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    );
-
-  // Fix: move hook outside conditional to avoid react-hooks/rules-of-hooks error
   // ✅ Hooks MUST be before any early return
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -113,12 +91,26 @@ export default function TableTabsBar() {
     };
   }, [tableMenuOpen, renameModalOpen]);
 
-  // ✅ NOW it's safe to early return
   if (!baseId) {
     return (
       <div className="relative h-[35px] border-b border-zinc-200 bg-violet-50" />
     );
   }
+
+  const { data: tablesData, isLoading } = api.table.listByBase.useQuery(
+    { baseId },
+    { enabled: !!baseId },
+  );
+
+  // Sort tables by createdAt to ensure new tables appear at the end
+  // Filter out tables that are being deleted
+  const tables = (tablesData as TableWithLoading[] | undefined)
+    ?.slice()
+    .filter((t) => !t._isDeleting)
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
 
   const createTable = api.table.create.useMutation({
     onMutate: async (variables) => {
