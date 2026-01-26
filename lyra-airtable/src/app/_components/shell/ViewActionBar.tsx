@@ -62,7 +62,7 @@ export default function ViewActionBar() {
       await utils.table.getData.cancel(dataQueryKey);
       const previous = utils.table.getData.getInfiniteData(dataQueryKey);
 
-      // ✅ Optimistically set totalCount to show 100k immediately
+      // ✅ Optimistically set totalCount immediately
       utils.table.getData.setInfiniteData(dataQueryKey, (old) => {
         if (!old || !count) return old;
 
@@ -78,8 +78,7 @@ export default function ViewActionBar() {
     },
 
     onSuccess: async () => {
-      // Polling handled by TableClient
-      console.log("✅ Seed mutation complete, TableClient will poll for data");
+      console.log("✅ Seed mutation complete");
     },
 
     onError: (_err, _vars, ctx) => {
@@ -92,6 +91,10 @@ export default function ViewActionBar() {
   const handleSeed = () => {
     if (seedRows.isPending) return;
     if (!confirm("Add 100,000 fake rows to this table?")) return;
+
+    // ✅ Set bulk loading BEFORE mutation
+    setIsBulkLoading?.(true);
+
     seedRows.mutate({ tableId, count: 100_000 });
   };
 

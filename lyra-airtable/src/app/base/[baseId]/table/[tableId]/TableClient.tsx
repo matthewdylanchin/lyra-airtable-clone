@@ -169,9 +169,10 @@ export default function TableClient() {
   } = api.table.getData.useInfiniteQuery(queryKey, {
     enabled: !!tableId,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: isBulkLoading ? 0 : 5 * 60 * 1000,
+    staleTime: isBulkLoading ? 0 : 5 * 60 * 1000, // ✅ Force refetch during bulk load
     gcTime: 10 * 60 * 1000,
     placeholderData: (previousData) => previousData,
+    refetchInterval: isBulkLoading ? 2000 : false, // ✅ Auto-refetch every 2s during bulk load
   });
 
   const data = useMemo((): TableDataType | undefined => {
@@ -692,24 +693,60 @@ export default function TableClient() {
   useEffect(() => {
     if (!isBulkLoading) return;
 
+    console.log("📊 Starting polling for bulk data...");
+
     const interval = setInterval(async () => {
+      console.log("🔄 Polling...");
+
+      // ✅ Save the optimistic totalCount before refetch
+      const currentData = utils.table.getData.getInfiniteData(queryKey);
+      const optimisticTotalCount = currentData?.pages[0]?.totalCount ?? 0;
+
       const result = await refetch();
 
-      // ✅ Check the refetched data directly, not the stale `data` variable
-      const freshCells = result.data?.pages.flatMap((p) => p.cells) ?? [];
+      // ✅ Restore optimistic totalCount if server returned less
+      const serverTotalCount = result.data?.pages[0]?.totalCount ?? 0;
+      if (serverTotalCount < optimisticTotalCount) {
+        utils.table.getData.setInfiniteData(queryKey, (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page, i) =>
+              i === 0 ? { ...page, totalCount: optimisticTotalCount } : page,
+            ),
+          };
+        });
+      }
+
+      const freshData = result.data;
+      if (!freshData?.pages?.[0]) {
+        console.log("⏳ No data yet...");
+        return;
+      }
+
+      const freshCells = freshData.pages.flatMap((p) => p.cells) ?? [];
       const rowsWithData = new Set(freshCells.map((c) => c.rowId)).size;
 
-      console.log(`📊 Progress: ${rowsWithData} rows with data`);
+      console.log(
+        `📊 Progress: ${rowsWithData} rows with data out of ${optimisticTotalCount}`,
+      );
 
-      if (rowsWithData >= 1000) {
-        setIsBulkLoading(false);
-        console.log(`✅ Initial load complete`);
-      }
+      // ✅ Don't stop polling - keep going until all data is loaded
+      // Only stop after 2 minutes (safety timeout)
     }, 2000);
 
-    return () => clearInterval(interval);
-  }, [isBulkLoading, refetch, setIsBulkLoading]); // ✅ Remove data?.cells from dependencies
+    // ✅ Safety timeout after 2 minutes
+    const timeout = setTimeout(() => {
+      console.log("⏱️ Bulk loading timeout");
+      setIsBulkLoading(false);
+    }, 120000);
 
+    return () => {
+      console.log("🛑 Stopping polling");
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [isBulkLoading, refetch, setIsBulkLoading, utils.table.getData, queryKey]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
