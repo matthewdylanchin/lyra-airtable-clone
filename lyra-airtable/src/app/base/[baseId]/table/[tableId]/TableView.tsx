@@ -298,6 +298,22 @@ export function TableView({
   const [rowMenu, setRowMenu] = useState<RowContextMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  const [openDirection, setOpenDirection] = useState<"up" | "down">("down");
+
+  useEffect(() => {
+    if (!rowMenu) return;
+
+    const menuHeight = 300; // Estimate or measure actual menu height
+    const buffer = 16; // Optional margin from edge
+    const spaceBelow = window.innerHeight - rowMenu.y;
+
+    if (spaceBelow < menuHeight + buffer) {
+      setOpenDirection("up");
+    } else {
+      setOpenDirection("down");
+    }
+  }, [rowMenu]);
+
   useEffect(() => {
     if (!rowMenu) return;
 
@@ -700,7 +716,12 @@ export function TableView({
         <div
           ref={menuRef}
           className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
-          style={{ top: rowMenu.y, left: rowMenu.x }}
+          style={{
+            left: rowMenu.x,
+            ...(openDirection === "down"
+              ? { top: rowMenu.y }
+              : { bottom: window.innerHeight - rowMenu.y }),
+          }}
         >
           <button
             type="button"
