@@ -180,7 +180,7 @@ export const rowRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { tableId, count } = input;
 
-      // Get the highest rowIndex, not the count
+      // Get the highest rowIndex
       const lastRow = await ctx.db.row.findFirst({
         where: { tableId },
         orderBy: { rowIndex: "desc" },
@@ -194,61 +194,99 @@ export const rowRouter = createTRPCRouter({
         select: { id: true, name: true, type: true },
       });
 
-      // 1. Create ALL rows in one bulk insert
-      const rowData = Array.from({ length: count }, (_, i) => ({
+      // ✅ CREATE ALL ROWS FIRST (just rows, no cells) - this is FAST
+      const allRowData = Array.from({ length: count }, (_, i) => ({
         tableId,
         rowIndex: startIndex + i,
       }));
 
-      await ctx.db.row.createMany({ data: rowData });
+      console.log(`🚀 Creating ${count} row records...`);
+      await ctx.db.row.createMany({ data: allRowData });
+      console.log(
+        `✅ All ${count} rows created! Now filling with cell data...`,
+      );
 
-      // 2. Fetch the newly created rows so we have their IDs
-      const newRows = await ctx.db.row.findMany({
-        where: {
-          tableId,
-          rowIndex: { gte: startIndex, lt: startIndex + count },
-        },
-        select: { id: true, rowIndex: true },
-        orderBy: { rowIndex: "asc" },
-      });
+      // ✅ Start background cell population (don't await)
+      void (async () => {
+        try {
+          const BATCH_SIZE = 5000; // Process 5k rows at a time
+          const batches = Math.ceil(count / BATCH_SIZE);
 
-      // 3. Build cell data with faker.js
-      const allCells: {
-        rowId: string;
-        columnId: string;
-        textValue?: string | null;
-        numberValue?: number | null;
-      }[] = [];
+          for (let batch = 0; batch < batches; batch++) {
+            const batchStart = batch * BATCH_SIZE;
+            const batchCount = Math.min(BATCH_SIZE, count - batchStart);
 
-      for (const row of newRows) {
-        for (const col of columns) {
-          if (col.type === "NUMBER") {
-            allCells.push({
-              rowId: row.id,
-              columnId: col.id,
-              textValue: null,
-              numberValue: faker.number.int({ min: 1, max: 10000 }),
+            // Fetch row IDs for this batch
+            const batchRows = await ctx.db.row.findMany({
+              where: {
+                tableId,
+                rowIndex: {
+                  gte: startIndex + batchStart,
+                  lt: startIndex + batchStart + batchCount,
+                },
+              },
+              select: { id: true, rowIndex: true },
+              orderBy: { rowIndex: "asc" },
             });
-          } else {
-            // Use faker for text data
-            allCells.push({
-              rowId: row.id,
-              columnId: col.id,
-              textValue: faker.lorem.words(3),
-              numberValue: null,
-            });
+
+            // Build cell data with faker
+            const allCells: {
+              rowId: string;
+              columnId: string;
+              textValue?: string | null;
+              numberValue?: number | null;
+            }[] = [];
+
+            for (const row of batchRows) {
+              for (const col of columns) {
+                if (col.type === "NUMBER") {
+                  allCells.push({
+                    rowId: row.id,
+                    columnId: col.id,
+                    textValue: null,
+                    numberValue: faker.number.int({ min: 1, max: 10000 }),
+                  });
+                } else {
+                  allCells.push({
+                    rowId: row.id,
+                    columnId: col.id,
+                    textValue: faker.lorem.words(3),
+                    numberValue: null,
+                  });
+                }
+              }
+            }
+
+            // Insert cells in chunks
+            const CELL_CHUNK_SIZE = 10_000;
+            for (let i = 0; i < allCells.length; i += CELL_CHUNK_SIZE) {
+              const chunk = allCells.slice(i, i + CELL_CHUNK_SIZE);
+              await ctx.db.cell.createMany({ data: chunk });
+            }
+
+            const totalPopulated = batchStart + batchCount;
+            console.log(
+              `✅ Batch ${batch + 1}/${batches} complete (${totalPopulated}/${count} rows with data)`,
+            );
+
+            // Small delay between batches
+            if (batch < batches - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
           }
+
+          console.log(`🎉 Finished populating ${count} rows with cell data`);
+        } catch (error) {
+          console.error("❌ Error in background cell population:", error);
         }
-      }
+      })();
 
-      // 4. Insert cells in chunks
-      const CHUNK_SIZE = 10_000;
-      for (let i = 0; i < allCells.length; i += CHUNK_SIZE) {
-        const chunk = allCells.slice(i, i + CHUNK_SIZE);
-        await ctx.db.cell.createMany({ data: chunk });
-      }
-
-      return { insertedRows: newRows.length };
+      // ✅ Return immediately - rows exist, cells are being populated
+      return {
+        success: true,
+        insertedRows: count,
+        message: `Created ${count} rows, populating cell data in background`,
+      };
     }),
   /** -----------------------------------------
    * REORDER ROWS (future use)

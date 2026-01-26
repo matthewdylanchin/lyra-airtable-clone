@@ -35,6 +35,7 @@ export default function ViewActionBar() {
     sorts,
     setSorts,
     dataQueryKey,
+    setIsBulkLoading,
   } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -43,7 +44,8 @@ export default function ViewActionBar() {
   const [hideFieldsPanelOpen, setHideFieldsPanelOpen] = useState(false);
   const hideFieldsButtonRef = useRef<HTMLButtonElement>(null);
 
-  const { hiddenColumnIds } = useTableView(); // ✅ Get hidden columns
+  const { hiddenColumnIds } = useTableView();
+
   // Set the refs in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
@@ -55,10 +57,12 @@ export default function ViewActionBar() {
     onMutate: async ({ count }) => {
       if (!dataQueryKey) return;
 
-      await utils.table.getData.cancel(dataQueryKey);
+      setIsBulkLoading?.(true);
 
+      await utils.table.getData.cancel(dataQueryKey);
       const previous = utils.table.getData.getInfiniteData(dataQueryKey);
 
+      // ✅ Optimistically set totalCount to show 100k immediately
       utils.table.getData.setInfiniteData(dataQueryKey, (old) => {
         if (!old || !count) return old;
 
@@ -74,13 +78,14 @@ export default function ViewActionBar() {
     },
 
     onSuccess: async () => {
-      if (!dataQueryKey) return;
-      await utils.table.getData.invalidate(dataQueryKey);
+      // Polling handled by TableClient
+      console.log("✅ Seed mutation complete, TableClient will poll for data");
     },
 
     onError: (_err, _vars, ctx) => {
       if (!dataQueryKey || !ctx?.previous) return;
       utils.table.getData.setInfiniteData(dataQueryKey, ctx.previous);
+      setIsBulkLoading?.(false);
     },
   });
 
@@ -242,12 +247,12 @@ export default function ViewActionBar() {
             <Search className="h-4 w-4 text-zinc-600" />
           </button>
         </div>
-              <HideFieldsPanel
-        isOpen={hideFieldsPanelOpen}
-        onClose={() => setHideFieldsPanelOpen(false)}
-        columns={data?.pages[0]?.columns ?? []}
-        triggerRef={hideFieldsButtonRef}
-      />
+        <HideFieldsPanel
+          isOpen={hideFieldsPanelOpen}
+          onClose={() => setHideFieldsPanelOpen(false)}
+          columns={data?.pages[0]?.columns ?? []}
+          triggerRef={hideFieldsButtonRef}
+        />
       </div>
     </div>
   );

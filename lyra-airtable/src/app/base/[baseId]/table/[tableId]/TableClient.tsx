@@ -12,7 +12,7 @@ import {
   useTableEditing,
   type PendingEditsMap,
   type PendingEdit,
-} from "./hooks/useTableEditing"; // ✅ Import type
+} from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -27,6 +27,19 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
+
+function getRowsWithCellData(data: TableDataType | undefined): Set<string> {
+  if (!data) return new Set();
+
+  const rowsWithData = new Set<string>();
+
+  // A row has data if it has at least one cell
+  data.cells.forEach((cell) => {
+    rowsWithData.add(cell.rowId);
+  });
+
+  return rowsWithData;
+}
 
 type ColumnType = {
   id: string;
@@ -75,6 +88,8 @@ export default function TableClient() {
     sorts,
     setSorts,
     setIsBusy,
+    isBulkLoading, // ✅ NEW: Get bulk loading state
+    setIsBulkLoading,
   } = useTableView();
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -150,10 +165,11 @@ export default function TableClient() {
     isFetching,
     isLoading,
     error,
+    refetch,
   } = api.table.getData.useInfiniteQuery(queryKey, {
     enabled: !!tableId,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: 5 * 60 * 1000,
+    staleTime: isBulkLoading ? 0 : 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
@@ -283,7 +299,7 @@ export default function TableClient() {
     data,
     cellByKey,
     upsert,
-    pendingEditsRef, // ✅ NEW: Pass the ref
+    pendingEditsRef,
     onCommit: (rowId, columnId, value) => {
       setPendingUpdates((prev) => ({
         ...prev,
@@ -464,12 +480,16 @@ export default function TableClient() {
     return new Set(sorts.map((s) => s.columnId));
   }, [sorts]);
 
+  const rowsWithCellData = useMemo(() => {
+    return getRowsWithCellData(data);
+  }, [data]);
+
   const columns = useMemo(
     () =>
       createColumns({
         data,
         editing,
-        draftRef, // ✅ Get the refs
+        draftRef,
         selectedCell,
         setSelectedCell,
         startEdit,
@@ -487,6 +507,8 @@ export default function TableClient() {
         filteredColumnIds,
         sortedColumnIds,
         hiddenColumnIds,
+        isBulkLoading, // ✅ ADD THIS
+        rowsWithCellData, // ✅ ADD THIS
       }),
     [
       data,
@@ -501,6 +523,8 @@ export default function TableClient() {
       filteredColumnIds,
       sortedColumnIds,
       hiddenColumnIds,
+      isBulkLoading, // ✅ ADD THIS
+      rowsWithCellData, // ✅ ADD THIS
     ],
   );
 
@@ -522,8 +546,9 @@ export default function TableClient() {
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // ✅ UPDATED: Use totalCount during bulk loading (to show skeletons), otherwise use actual rows length
   const rowVirtualizer = useVirtualizer({
-    count: data?.rows.length ?? 0, // ✅ FIX: Use actual rows length to prevent skeleton rows
+    count: isBulkLoading ? (data?.totalCount ?? 0) : (data?.rows.length ?? 0),
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 150,
@@ -665,6 +690,27 @@ export default function TableClient() {
   }, [isBusy, setIsBusy]);
 
   useEffect(() => {
+    if (!isBulkLoading) return;
+
+    const interval = setInterval(async () => {
+      const result = await refetch();
+
+      // ✅ Check the refetched data directly, not the stale `data` variable
+      const freshCells = result.data?.pages.flatMap((p) => p.cells) ?? [];
+      const rowsWithData = new Set(freshCells.map((c) => c.rowId)).size;
+
+      console.log(`📊 Progress: ${rowsWithData} rows with data`);
+
+      if (rowsWithData >= 1000) {
+        setIsBulkLoading(false);
+        console.log(`✅ Initial load complete`);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isBulkLoading, refetch, setIsBulkLoading]); // ✅ Remove data?.cells from dependencies
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
@@ -760,8 +806,8 @@ export default function TableClient() {
           }
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
-          onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
-          onFlushPendingColumnEdits={flushPendingColumnEdits} // ✅ NEW
+          onFlushPendingEdits={flushPendingEdits}
+          onFlushPendingColumnEdits={flushPendingColumnEdits}
         />
       </div>
       <BottomBar rowCount={data.totalCount} />

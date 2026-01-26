@@ -156,8 +156,8 @@ const EditInput = memo(function EditInput({
 
 export function createColumns({
   data,
-  editing, // ✅ Keep editing as STATE (needed to trigger re-render when editing starts/stops)
-  draftRef, // ✅ Use ref for draft (avoids re-render on every keystroke)
+  editing,
+  draftRef,
   selectedCell,
   setSelectedCell,
   startEdit,
@@ -170,10 +170,12 @@ export function createColumns({
   filteredColumnIds,
   sortedColumnIds,
   hiddenColumnIds,
+  isBulkLoading, // ✅ ADD THIS
+  rowsWithCellData, // ✅ ADD THIS
 }: {
   data: TableData | undefined;
-  editing: Editing; // ✅ STATE
-  draftRef: MutableRefObject<string>; // ✅ REF
+  editing: Editing;
+  draftRef: MutableRefObject<string>;
   selectedCell: SelectedCell;
   setSelectedCell: (v: SelectedCell) => void;
   startEdit: (
@@ -197,7 +199,9 @@ export function createColumns({
   } | null;
   filteredColumnIds?: Set<string>;
   sortedColumnIds?: Set<string>;
-  hiddenColumnIds?: string[]; // ✅ Add type
+  hiddenColumnIds?: string[];
+  isBulkLoading?: boolean; // ✅ ADD THIS TYPE
+  rowsWithCellData?: Set<string>; // ✅ ADD THIS TYPE
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -269,6 +273,20 @@ export function createColumns({
             const rowId = info.row.original.__rowId;
             const rowIndex = info.row.index;
             const colIndex = info.column.getIndex();
+
+            // ✅ ADD THIS CHECK FIRST - before any other logic
+            // Show skeleton for rows without cell data during bulk load
+            if (
+              isBulkLoading &&
+              rowsWithCellData &&
+              !rowsWithCellData.has(rowId)
+            ) {
+              return (
+                <div className="flex h-9 items-center px-2.5">
+                  <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
+                </div>
+              );
+            }
 
             const isSelected =
               selectedCell?.rowIndex === rowIndex &&

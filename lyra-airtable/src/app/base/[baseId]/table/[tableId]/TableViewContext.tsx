@@ -57,6 +57,10 @@ type TableViewContextType = {
   isBusy: boolean;
   setIsBusy: (v: boolean) => void;
 
+  // ✅ NEW: Bulk loading state (for 100k rows)
+  isBulkLoading: boolean;
+  setIsBulkLoading: (v: boolean) => void;
+
   // ✅ NEW: Views
   views: View[];
   viewsLoading: boolean;
@@ -104,6 +108,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
   const [dataQueryKey, setDataQueryKey] = useState<TableDataQueryInput | null>(
     null,
   );
+
+  // ✅ NEW: Bulk loading state (for 100k rows feature)
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
 
   const lastLoadedViewId = useRef<string | null>(null); // ✅ Add this
   // ✅ NEW: View state
@@ -367,6 +374,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     setFilterPanelOpen(false);
     setSortPanelOpen(false);
     setIsViewDirty(false);
+    setIsBulkLoading(false); // ✅ Reset bulk loading state
     hasAttemptedAutoCreate.current = false;
     isLoadingView.current = false;
   }, [tableId]);
@@ -414,6 +422,10 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         // Busy
         isBusy,
         setIsBusy,
+
+        // ✅ NEW: Bulk loading
+        isBulkLoading,
+        setIsBulkLoading,
 
         // Views
         views,
