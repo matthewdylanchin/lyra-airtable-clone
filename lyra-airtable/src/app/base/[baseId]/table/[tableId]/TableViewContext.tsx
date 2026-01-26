@@ -74,6 +74,8 @@ type TableViewContextType = {
   isViewDirty: boolean; // Has unsaved changes
   hiddenColumnIds: string[];
   setHiddenColumnIds: (ids: string[]) => void;
+  optimisticRowCount: number | null;
+  setOptimisticRowCount: React.Dispatch<React.SetStateAction<number | null>>;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -122,6 +124,10 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
   const [isViewDirty, setIsViewDirty] = useState(false);
   const isLoadingView = useRef(false); // Prevent save while loading
+
+  const [optimisticRowCount, setOptimisticRowCount] = useState<number | null>(
+    null,
+  );
 
   const utils = api.useUtils();
 
@@ -441,6 +447,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
         hiddenColumnIds,
         setHiddenColumnIds,
+
+        optimisticRowCount,
+        setOptimisticRowCount,
       }}
     >
       {children}

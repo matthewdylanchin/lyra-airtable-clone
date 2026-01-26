@@ -92,6 +92,9 @@ export default function TableClient() {
     setIsBulkLoading,
   } = useTableView();
 
+  const [optimisticRowCount, setOptimisticRowCount] = useState<number | null>(
+    null,
+  );
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};
     const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
@@ -549,7 +552,7 @@ export default function TableClient() {
 
   // ✅ UPDATED: Use totalCount during bulk loading (to show skeletons), otherwise use actual rows length
   const rowVirtualizer = useVirtualizer({
-    count: isBulkLoading ? (data?.totalCount ?? 0) : (data?.rows.length ?? 0),
+    count: data?.rows.length ?? 0, // ✅ only render what is actually loaded
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 150,
@@ -563,116 +566,6 @@ export default function TableClient() {
       timeoutIds.current = [];
     };
   }, []);
-
-  const lastScrollTop = useRef(0);
-  const isLoadingJump = useRef(false);
-
-  const handleJumpFetch = useCallback(
-    async (pagesToFetch: number) => {
-      isLoadingJump.current = true;
-
-      try {
-        for (let i = 0; i < pagesToFetch; i++) {
-          if (hasNextPage && !isFetchingNextPage) {
-            await fetchNextPage();
-          }
-        }
-      } catch (error) {
-        console.error("Error in jump fetch:", error);
-      } finally {
-        isLoadingJump.current = false;
-      }
-    },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
-  );
-
-  useEffect(() => {
-    const container = tableContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const currentScrollTop = container.scrollTop;
-      const scrollDiff = Math.abs(currentScrollTop - lastScrollTop.current);
-
-      if (scrollDiff > 3000 && !isLoadingJump.current) {
-        const virtualItems = rowVirtualizer.getVirtualItems();
-        if (!virtualItems.length) return;
-
-        const firstVisible = virtualItems[0]?.index ?? 0;
-        const loadedRowCount = data?.rows.length ?? 0;
-
-        if (firstVisible >= loadedRowCount - 500) {
-          const rowsNeeded = firstVisible - loadedRowCount;
-          const pagesNeeded = Math.ceil(rowsNeeded / 5000);
-          const pagesToFetch = Math.min(pagesNeeded + 1, 5);
-
-          console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
-          void handleJumpFetch(pagesToFetch);
-        }
-      }
-
-      lastScrollTop.current = currentScrollTop;
-    };
-
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
-
-  const isFetchingMultiple = useRef(false);
-
-  const handleEmergencyFetch = useCallback(async () => {
-    isFetchingMultiple.current = true;
-
-    try {
-      await fetchNextPage();
-      await fetchNextPage();
-    } catch (error) {
-      console.error("Error in emergency fetch:", error);
-    } finally {
-      isFetchingMultiple.current = false;
-    }
-  }, [fetchNextPage]);
-
-  useEffect(() => {
-    if (isFetchingMultiple.current || isLoadingJump.current) return;
-
-    const virtualItems = rowVirtualizer.getVirtualItems();
-    if (!virtualItems.length) return;
-
-    const lastItem = virtualItems[virtualItems.length - 1];
-    if (!lastItem) return;
-
-    const loadedRowCount = data?.rows.length ?? 0;
-    const remainingBuffer = loadedRowCount - lastItem.index;
-
-    if (remainingBuffer < 8000 && hasNextPage && !isFetchingNextPage) {
-      if (remainingBuffer < 1500) {
-        console.log("🔥 EMERGENCY: Fetching multiple pages!");
-        void handleEmergencyFetch();
-      } else {
-        void fetchNextPage();
-        void fetchNextPage();
-      }
-    }
-  }, [
-    rowVirtualizer.getVirtualItems(),
-    data?.rows.length,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-    handleEmergencyFetch,
-  ]);
-
-  useEffect(() => {
-    if (
-      data &&
-      data.rows.length < 20000 &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      void fetchNextPage();
-    }
-  }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   useKeyboardNavigation({
     table,
@@ -691,62 +584,25 @@ export default function TableClient() {
   }, [isBusy, setIsBusy]);
 
   useEffect(() => {
-    if (!isBulkLoading) return;
+    const items = rowVirtualizer.getVirtualItems();
+    if (!items.length || !data) return;
 
-    console.log("📊 Starting polling for bulk data...");
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
 
-    const interval = setInterval(async () => {
-      console.log("🔄 Polling...");
+    const loaded = data.rows.length;
 
-      // ✅ Save the optimistic totalCount before refetch
-      const currentData = utils.table.getData.getInfiniteData(queryKey);
-      const optimisticTotalCount = currentData?.pages[0]?.totalCount ?? 0;
+    if (lastItem.index >= loaded - 50 && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [
+    rowVirtualizer.getVirtualItems(),
+    data?.rows.length,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  ]);
 
-      const result = await refetch();
-
-      // ✅ Restore optimistic totalCount if server returned less
-      const serverTotalCount = result.data?.pages[0]?.totalCount ?? 0;
-      if (serverTotalCount < optimisticTotalCount) {
-        utils.table.getData.setInfiniteData(queryKey, (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page, i) =>
-              i === 0 ? { ...page, totalCount: optimisticTotalCount } : page,
-            ),
-          };
-        });
-      }
-
-      const freshData = result.data;
-      if (!freshData?.pages?.[0]) {
-        console.log("⏳ No data yet...");
-        return;
-      }
-
-      const freshCells = freshData.pages.flatMap((p) => p.cells) ?? [];
-      const rowsWithData = new Set(freshCells.map((c) => c.rowId)).size;
-
-      console.log(
-        `📊 Progress: ${rowsWithData} rows with data out of ${optimisticTotalCount}`,
-      );
-
-      // ✅ Don't stop polling - keep going until all data is loaded
-      // Only stop after 2 minutes (safety timeout)
-    }, 2000);
-
-    // ✅ Safety timeout after 2 minutes
-    const timeout = setTimeout(() => {
-      console.log("⏱️ Bulk loading timeout");
-      setIsBulkLoading(false);
-    }, 120000);
-
-    return () => {
-      console.log("🛑 Stopping polling");
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [isBulkLoading, refetch, setIsBulkLoading, utils.table.getData, queryKey]);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -836,11 +692,7 @@ export default function TableClient() {
           focusedColumnIndex={selectedCell?.colIndex ?? null}
           rowVirtualizer={rowVirtualizer}
           tableContainerRef={tableContainerRef}
-          isFetchingNextPage={
-            isFetchingNextPage ||
-            isFetchingMultiple.current ||
-            isLoadingJump.current
-          }
+          isFetchingNextPage={isFetchingNextPage}
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
           onFlushPendingEdits={flushPendingEdits}
