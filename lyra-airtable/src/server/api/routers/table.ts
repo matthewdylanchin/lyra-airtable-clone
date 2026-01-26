@@ -22,6 +22,77 @@ export const tableRouter = createTRPCRouter({
       });
     }),
 
+  rename: protectedProcedure
+    .input(
+      z.object({
+        tableId: z.string(),
+        name: z.string().min(1).max(80),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const table = await ctx.db.table.findFirst({
+        where: {
+          id: input.tableId,
+          base: { ownerId: ctx.session.user.id },
+        },
+        select: { id: true },
+      });
+
+      if (!table) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+      }
+
+      try {
+        return await ctx.db.table.update({
+          where: { id: input.tableId },
+          data: { name: input.name },
+          select: {
+            id: true,
+            name: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      } catch (err: unknown) {
+        if (
+          err instanceof PrismaClientKnownRequestError &&
+          err.code === "P2002"
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Please enter a unique table name",
+          });
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to rename table",
+        });
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ tableId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const table = await ctx.db.table.findFirst({
+        where: {
+          id: input.tableId,
+          base: { ownerId: ctx.session.user.id },
+        },
+        select: { id: true },
+      });
+
+      if (!table) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+      }
+
+      await ctx.db.table.delete({
+        where: { id: input.tableId },
+      });
+
+      return { success: true };
+    }),
+
   create: protectedProcedure
     .input(
       z.object({
