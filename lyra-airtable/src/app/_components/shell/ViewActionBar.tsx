@@ -36,6 +36,8 @@ export default function ViewActionBar() {
     setSorts,
     dataQueryKey,
     setIsBulkLoading,
+    optimisticRowCount,
+    setOptimisticRowCount,
   } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -57,22 +59,13 @@ export default function ViewActionBar() {
     onMutate: async ({ count }) => {
       if (!dataQueryKey) return;
 
-      setIsBulkLoading?.(true);
+      setOptimisticRowCount((prev) => {
+        const current = prev ?? data?.pages[0]?.totalCount ?? 0;
+        return current + 100_000;
+      });
 
       await utils.table.getData.cancel(dataQueryKey);
       const previous = utils.table.getData.getInfiniteData(dataQueryKey);
-
-      // ✅ Optimistically set totalCount immediately
-      utils.table.getData.setInfiniteData(dataQueryKey, (old) => {
-        if (!old || !count) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page, i) =>
-            i === 0 ? { ...page, totalCount: page.totalCount + count } : page,
-          ),
-        };
-      });
 
       return { previous };
     },

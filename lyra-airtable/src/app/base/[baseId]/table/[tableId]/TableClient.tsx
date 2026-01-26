@@ -88,13 +88,12 @@ export default function TableClient() {
     sorts,
     setSorts,
     setIsBusy,
-    isBulkLoading, // ✅ NEW: Get bulk loading state
+    isBulkLoading,
     setIsBulkLoading,
+    optimisticRowCount,
+    setOptimisticRowCount,
   } = useTableView();
 
-  const [optimisticRowCount, setOptimisticRowCount] = useState<number | null>(
-    null,
-  );
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};
     const saved = localStorage.getItem(`table-column-sizing-${tableId}`);
@@ -604,6 +603,14 @@ export default function TableClient() {
   ]);
 
   useEffect(() => {
+    if (!optimisticRowCount || !data) return;
+
+    if (data.rows.length >= optimisticRowCount) {
+      setOptimisticRowCount(null);
+    }
+  }, [data?.rows.length, optimisticRowCount]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
@@ -699,7 +706,7 @@ export default function TableClient() {
           onFlushPendingColumnEdits={flushPendingColumnEdits}
         />
       </div>
-      <BottomBar rowCount={data.totalCount} />
+      <BottomBar rowCount={optimisticRowCount ?? data.totalCount} />
     </div>
   );
 }
