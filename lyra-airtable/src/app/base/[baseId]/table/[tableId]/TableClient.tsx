@@ -12,7 +12,7 @@ import {
   useTableEditing,
   type PendingEditsMap,
   type PendingEdit,
-} from "./hooks/useTableEditing"; // ✅ Import type
+} from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -27,6 +27,19 @@ import type {
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
+
+function getRowsWithCellData(data: TableDataType | undefined): Set<string> {
+  if (!data) return new Set();
+
+  const rowsWithData = new Set<string>();
+
+  // A row has data if it has at least one cell
+  data.cells.forEach((cell) => {
+    rowsWithData.add(cell.rowId);
+  });
+
+  return rowsWithData;
+}
 
 type ColumnType = {
   id: string;
@@ -54,7 +67,7 @@ type TableDataType = {
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
-  const {hiddenColumnIds} = useTableView();
+  const { hiddenColumnIds } = useTableView();
 
   const {
     searchBarOpen,
@@ -75,6 +88,10 @@ export default function TableClient() {
     sorts,
     setSorts,
     setIsBusy,
+    isBulkLoading,
+    setIsBulkLoading,
+    optimisticRowCount,
+    setOptimisticRowCount,
   } = useTableView();
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -150,12 +167,14 @@ export default function TableClient() {
     isFetching,
     isLoading,
     error,
+    refetch,
   } = api.table.getData.useInfiniteQuery(queryKey, {
     enabled: !!tableId,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: 5 * 60 * 1000,
+    staleTime: isBulkLoading ? 0 : 5 * 60 * 1000, // ✅ Force refetch during bulk load
     gcTime: 10 * 60 * 1000,
     placeholderData: (previousData) => previousData,
+    refetchInterval: isBulkLoading ? 2000 : false, // ✅ Auto-refetch every 2s during bulk load
   });
 
   const data = useMemo((): TableDataType | undefined => {
@@ -283,7 +302,7 @@ export default function TableClient() {
     data,
     cellByKey,
     upsert,
-    pendingEditsRef, // ✅ NEW: Pass the ref
+    pendingEditsRef,
     onCommit: (rowId, columnId, value) => {
       setPendingUpdates((prev) => ({
         ...prev,
@@ -464,12 +483,16 @@ export default function TableClient() {
     return new Set(sorts.map((s) => s.columnId));
   }, [sorts]);
 
+  const rowsWithCellData = useMemo(() => {
+    return getRowsWithCellData(data);
+  }, [data]);
+
   const columns = useMemo(
     () =>
       createColumns({
         data,
         editing,
-        draftRef, // ✅ Get the refs
+        draftRef,
         selectedCell,
         setSelectedCell,
         startEdit,
@@ -486,7 +509,9 @@ export default function TableClient() {
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
-        hiddenColumnIds
+        hiddenColumnIds,
+        isBulkLoading, // ✅ ADD THIS
+        rowsWithCellData, // ✅ ADD THIS
       }),
     [
       data,
@@ -501,6 +526,8 @@ export default function TableClient() {
       filteredColumnIds,
       sortedColumnIds,
       hiddenColumnIds,
+      isBulkLoading, // ✅ ADD THIS
+      rowsWithCellData, // ✅ ADD THIS
     ],
   );
 
@@ -522,8 +549,13 @@ export default function TableClient() {
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
+  // ✅ UPDATED: Use totalCount during bulk loading (to show skeletons), otherwise use actual rows length
+  const totalRows = isBulkLoading
+    ? (optimisticRowCount ?? data?.totalCount ?? data?.rows.length ?? 0)
+    : (data?.rows.length ?? 0);
+
   const rowVirtualizer = useVirtualizer({
-    count: data?.totalCount ?? 0,
+    count: totalRows,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 150,
@@ -537,116 +569,6 @@ export default function TableClient() {
       timeoutIds.current = [];
     };
   }, []);
-
-  const lastScrollTop = useRef(0);
-  const isLoadingJump = useRef(false);
-
-  const handleJumpFetch = useCallback(
-    async (pagesToFetch: number) => {
-      isLoadingJump.current = true;
-
-      try {
-        for (let i = 0; i < pagesToFetch; i++) {
-          if (hasNextPage && !isFetchingNextPage) {
-            await fetchNextPage();
-          }
-        }
-      } catch (error) {
-        console.error("Error in jump fetch:", error);
-      } finally {
-        isLoadingJump.current = false;
-      }
-    },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
-  );
-
-  useEffect(() => {
-    const container = tableContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const currentScrollTop = container.scrollTop;
-      const scrollDiff = Math.abs(currentScrollTop - lastScrollTop.current);
-
-      if (scrollDiff > 3000 && !isLoadingJump.current) {
-        const virtualItems = rowVirtualizer.getVirtualItems();
-        if (!virtualItems.length) return;
-
-        const firstVisible = virtualItems[0]?.index ?? 0;
-        const loadedRowCount = data?.rows.length ?? 0;
-
-        if (firstVisible >= loadedRowCount - 500) {
-          const rowsNeeded = firstVisible - loadedRowCount;
-          const pagesNeeded = Math.ceil(rowsNeeded / 5000);
-          const pagesToFetch = Math.min(pagesNeeded + 1, 5);
-
-          console.log(`🔄 Fetching ${pagesToFetch} pages for jump...`);
-          void handleJumpFetch(pagesToFetch);
-        }
-      }
-
-      lastScrollTop.current = currentScrollTop;
-    };
-
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [data?.rows.length, rowVirtualizer, handleJumpFetch]);
-
-  const isFetchingMultiple = useRef(false);
-
-  const handleEmergencyFetch = useCallback(async () => {
-    isFetchingMultiple.current = true;
-
-    try {
-      await fetchNextPage();
-      await fetchNextPage();
-    } catch (error) {
-      console.error("Error in emergency fetch:", error);
-    } finally {
-      isFetchingMultiple.current = false;
-    }
-  }, [fetchNextPage]);
-
-  useEffect(() => {
-    if (isFetchingMultiple.current || isLoadingJump.current) return;
-
-    const virtualItems = rowVirtualizer.getVirtualItems();
-    if (!virtualItems.length) return;
-
-    const lastItem = virtualItems[virtualItems.length - 1];
-    if (!lastItem) return;
-
-    const loadedRowCount = data?.rows.length ?? 0;
-    const remainingBuffer = loadedRowCount - lastItem.index;
-
-    if (remainingBuffer < 8000 && hasNextPage && !isFetchingNextPage) {
-      if (remainingBuffer < 1500) {
-        console.log("🔥 EMERGENCY: Fetching multiple pages!");
-        void handleEmergencyFetch();
-      } else {
-        void fetchNextPage();
-        void fetchNextPage();
-      }
-    }
-  }, [
-    rowVirtualizer.getVirtualItems(),
-    data?.rows.length,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-    handleEmergencyFetch,
-  ]);
-
-  useEffect(() => {
-    if (
-      data &&
-      data.rows.length < 20000 &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      void fetchNextPage();
-    }
-  }, [data?.rows.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   useKeyboardNavigation({
     table,
@@ -663,6 +585,34 @@ export default function TableClient() {
   useEffect(() => {
     setIsBusy(isBusy);
   }, [isBusy, setIsBusy]);
+
+  useEffect(() => {
+    const items = rowVirtualizer.getVirtualItems();
+    if (!items.length || !data) return;
+
+    const lastItem = items[items.length - 1];
+    if (!lastItem) return;
+
+    const loaded = data.rows.length;
+
+    if (lastItem.index >= loaded - 50 && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [
+    rowVirtualizer.getVirtualItems(),
+    data?.rows.length,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  ]);
+
+  useEffect(() => {
+    if (!optimisticRowCount || !data) return;
+
+    if (data.rows.length >= optimisticRowCount) {
+      setOptimisticRowCount(null);
+    }
+  }, [data?.rows.length, optimisticRowCount]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -753,18 +703,14 @@ export default function TableClient() {
           focusedColumnIndex={selectedCell?.colIndex ?? null}
           rowVirtualizer={rowVirtualizer}
           tableContainerRef={tableContainerRef}
-          isFetchingNextPage={
-            isFetchingNextPage ||
-            isFetchingMultiple.current ||
-            isLoadingJump.current
-          }
+          isFetchingNextPage={isFetchingNextPage}
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
-          onFlushPendingEdits={flushPendingEdits} // ✅ NEW: Pass the flush function
-          onFlushPendingColumnEdits={flushPendingColumnEdits} // ✅ NEW
+          onFlushPendingEdits={flushPendingEdits}
+          onFlushPendingColumnEdits={flushPendingColumnEdits}
         />
       </div>
-      <BottomBar rowCount={data.totalCount} />
+      <BottomBar rowCount={optimisticRowCount ?? data.totalCount} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { flexRender } from "@tanstack/react-table";
 import type { Table } from "@tanstack/react-table";
 import type { Virtualizer } from "@tanstack/react-virtual";
@@ -27,7 +27,7 @@ export function TableView({
   isFetchingNextPage,
   onOpenSearch,
   queryKey,
-  onFlushPendingEdits, // ✅ NEW: Callback to flush pending edits
+  onFlushPendingEdits,
   onFlushPendingColumnEdits,
 }: {
   table: Table<TableRow>;
@@ -55,54 +55,70 @@ export function TableView({
       type?: "text" | "number";
     }[];
   };
-  onFlushPendingEdits?: (tempId: string, realId: string) => void; // ✅ NEW
-  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void; // ✅ NEW
+  onFlushPendingEdits?: (tempId: string, realId: string) => void;
+  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
-  function replaceTempRowId(tempId: string, realId: string) {
-    console.log(`🔄 [replaceTempRowId] ${tempId} → ${realId}`);
+  // ✅ Track pending temp IDs to handle rapid creation
+  const pendingTempIds = useRef<Set<string>>(new Set());
 
-    // ✅ IMPORTANT: Flush pending edits FIRST (this updates editing.rowId)
-    // This must happen BEFORE the cache update causes a re-render
-    if (onFlushPendingEdits) {
-      onFlushPendingEdits(tempId, realId);
-    }
+  const replaceTempRowId = useCallback(
+    (tempId: string, realId: string) => {
+      console.log(`🔄 [replaceTempRowId] ${tempId} → ${realId}`);
 
-    // ✅ THEN update the cache (which triggers re-render)
-    utils.table.getData.setInfiniteData(queryKey, (old) => {
-      if (!old) return old;
+      // Remove from pending set
+      pendingTempIds.current.delete(tempId);
 
-      return {
-        ...old,
-        pages: old.pages.map((page) => ({
-          ...page,
-          rows: page.rows.map((r) =>
-            r.id === tempId ? { ...r, id: realId } : r,
-          ),
-          cells: page.cells.map((c) =>
-            c.rowId === tempId ? { ...c, rowId: realId } : c,
-          ),
-        })),
-      };
-    });
+      // Flush pending edits FIRST
+      if (onFlushPendingEdits) {
+        onFlushPendingEdits(tempId, realId);
+      }
 
-    // ✅ NEW: Flush any pending edits for this temp row
-  }
+      // Then update the cache
+      utils.table.getData.setInfiniteData(queryKey, (old) => {
+        if (!old) return old;
+
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            rows: page.rows.map((r) =>
+              r.id === tempId ? { ...r, id: realId } : r,
+            ),
+            cells: page.cells.map((c) =>
+              c.rowId === tempId ? { ...c, rowId: realId } : c,
+            ),
+          })),
+        };
+      });
+    },
+    [onFlushPendingEdits, queryKey, utils.table.getData],
+  );
 
   /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
 
   // ⚡ OPTIMISTIC: Append at bottom (used by "+ Add row")
+  // ✅ FIXED: Non-blocking optimistic updates for rapid row creation
   const appendRow = api.row.create.useMutation({
-    onMutate: async () => {
-      await utils.table.getData.cancel(queryKey);
+    onMutate: (variables) => {
+      // ✅ DON'T await cancel - just fire and forget to avoid blocking
+      void utils.table.getData.cancel(queryKey);
+
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       const tempRowId = `temp-${crypto.randomUUID()}`;
-      const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
-      const newRowIndex = currentRowCount;
 
+      // Track this temp ID
+      pendingTempIds.current.add(tempRowId);
+
+      // ✅ Calculate row count including any pending temp rows
+      const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
+      const pendingCount = pendingTempIds.current.size - 1; // -1 because we just added this one
+      const newRowIndex = currentRowCount + pendingCount;
+
+      // ✅ Synchronous cache update - no awaits
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
 
@@ -130,7 +146,7 @@ export function TableView({
             ...lastPage,
             rows: [...lastPage.rows, tempRow],
             cells: [...lastPage.cells, ...tempCells],
-            totalCount: currentRowCount + 1,
+            totalCount: (lastPage.totalCount ?? 0) + 1,
           };
         }
 
@@ -144,11 +160,15 @@ export function TableView({
     },
 
     onSuccess: (realRow, _, ctx) => {
-      // ✅ This now also flushes pending edits
-      replaceTempRowId(ctx.tempRowId, realRow.id);
+      if (ctx?.tempRowId) {
+        replaceTempRowId(ctx.tempRowId, realRow.id);
+      }
     },
 
     onError: (_err, _vars, ctx) => {
+      if (ctx?.tempRowId) {
+        pendingTempIds.current.delete(ctx.tempRowId);
+      }
       if (ctx?.previousData) {
         utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
       }
@@ -157,11 +177,14 @@ export function TableView({
 
   // ⚡ OPTIMISTIC: Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
-    onMutate: async (variables) => {
-      await utils.table.getData.cancel(queryKey);
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
+    onMutate: (variables) => {
+      // ✅ DON'T await - fire and forget
+      void utils.table.getData.cancel(queryKey);
 
-      const tempRowId = `temp-row-${Date.now()}`;
+      const previousData = utils.table.getData.getInfiniteData(queryKey);
+      const tempRowId = `temp-row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      pendingTempIds.current.add(tempRowId);
 
       utils.table.getData.setInfiniteData(queryKey, (old) => {
         if (!old?.pages.length) return old;
@@ -186,7 +209,7 @@ export function TableView({
         };
 
         const tempCells = columns.map((col) => ({
-          id: `temp-cell-${col.id}-${Date.now()}`,
+          id: `temp-cell-${col.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           rowId: tempRowId,
           columnId: col.id,
           textValue: "",
@@ -210,11 +233,10 @@ export function TableView({
         };
       });
 
-      return { previousData, tempRowId }; // ✅ Return tempRowId
+      return { previousData, tempRowId };
     },
 
     onSuccess: async (realRow, _, ctx) => {
-      // ✅ Replace temp ID and flush pending edits
       if (ctx?.tempRowId && realRow?.id) {
         replaceTempRowId(ctx.tempRowId, realRow.id);
       }
@@ -224,6 +246,9 @@ export function TableView({
 
     onError: (err, variables, context) => {
       console.error("Failed to insert row:", err);
+      if (context?.tempRowId) {
+        pendingTempIds.current.delete(context.tempRowId);
+      }
       if (context?.previousData) {
         utils.table.getData.setInfiniteData(queryKey, context.previousData);
       }
@@ -231,13 +256,10 @@ export function TableView({
     },
   });
 
-  // ... REST OF THE FILE STAYS THE SAME ...
-  // (Delete row mutation, context menu state, handlers, render logic, etc.)
-
   // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
-    onMutate: async (rowId) => {
-      await utils.table.getData.cancel(queryKey);
+    onMutate: (rowId) => {
+      void utils.table.getData.cancel(queryKey);
       const previousData = utils.table.getData.getInfiniteData(queryKey);
 
       utils.table.getData.setInfiniteData(queryKey, (old) => {
@@ -276,6 +298,22 @@ export function TableView({
   const [rowMenu, setRowMenu] = useState<RowContextMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  const [openDirection, setOpenDirection] = useState<"up" | "down">("down");
+
+  useEffect(() => {
+    if (!rowMenu) return;
+
+    const menuHeight = 300; // Estimate or measure actual menu height
+    const buffer = 16; // Optional margin from edge
+    const spaceBelow = window.innerHeight - rowMenu.y;
+
+    if (spaceBelow < menuHeight + buffer) {
+      setOpenDirection("up");
+    } else {
+      setOpenDirection("down");
+    }
+  }, [rowMenu]);
+
   useEffect(() => {
     if (!rowMenu) return;
 
@@ -313,9 +351,10 @@ export function TableView({
     void deleteRow.mutate(rowMenu.rowId);
   };
 
-  const handleAddRow = () => {
+  // ✅ Allow rapid clicking - don't check isPending
+  const handleAddRow = useCallback(() => {
     void appendRow.mutate({ tableId });
-  };
+  }, [appendRow, tableId]);
 
   const rows = table.getRowModel().rows;
   const headerGroups = table.getHeaderGroups();
@@ -488,7 +527,7 @@ export function TableView({
                     tableId={tableId}
                     queryKey={queryKey}
                     className="absolute inset-0"
-                    onFlushPendingColumnEdits={onFlushPendingColumnEdits} // ✅ NEW
+                    onFlushPendingColumnEdits={onFlushPendingColumnEdits}
                   />
                 </th>
               </tr>
@@ -504,6 +543,7 @@ export function TableView({
 
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
+              const isSkeletonRow = virtualRow.index >= rows.length;
 
               if (!row) {
                 return (
@@ -624,13 +664,10 @@ export function TableView({
             )}
 
             {/* Add Row - styled like a regular row with + in first column */}
+            {/* ✅ FIXED: Removed isPending check to allow rapid clicking */}
             <tr
               className="group cursor-pointer hover:bg-gray-50"
-              onClick={() => {
-                if (!appendRow.isPending) {
-                  handleAddRow();
-                }
-              }}
+              onClick={handleAddRow}
             >
               {visibleColumns.map((col, colIndex) => {
                 const width = col.getSize();
@@ -679,7 +716,12 @@ export function TableView({
         <div
           ref={menuRef}
           className="fixed z-[10000] w-75 rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
-          style={{ top: rowMenu.y, left: rowMenu.x }}
+          style={{
+            left: rowMenu.x,
+            ...(openDirection === "down"
+              ? { top: rowMenu.y }
+              : { bottom: window.innerHeight - rowMenu.y }),
+          }}
         >
           <button
             type="button"
@@ -898,7 +940,7 @@ export function TableView({
           autoOpen
           initialPosition={addColumnOpen.position}
           queryKey={queryKey}
-          onFlushPendingColumnEdits={onFlushPendingColumnEdits} // ✅ NEW
+          onFlushPendingColumnEdits={onFlushPendingColumnEdits}
         />
       )}
     </div>

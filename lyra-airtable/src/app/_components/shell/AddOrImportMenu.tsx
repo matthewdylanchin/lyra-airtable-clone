@@ -1,181 +1,214 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Plus,
+  FileSpreadsheet,
+  Calendar,
+  Sheet,
+  FileUp,
+  Layers,
+  Sparkles,
+  ChevronRight,
+} from "lucide-react";
 import { api } from "@/trpc/react";
-import { useRouter } from "next/navigation"; // ✅ Add this
 
-export default function AddOrImportMenu({ baseId }: { baseId: string }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("Table 1");
-  const btnRef = useRef<HTMLButtonElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const utils = api.useUtils();
-  const router = useRouter(); // ✅ Add this
+type TableWithLoading = {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+  _isLoading?: boolean;
+};
 
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+export default function AddOrImportMenu({
+  baseId,
+  onCreateTable,
+}: {
+  baseId: string;
+  onCreateTable?: (defaultName: string) => void;
+}) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
-  const create = api.table.create.useMutation({
-    onSuccess: async (newTable) => {
-      // ✅ Use the returned data
-      setOpen(false);
-      setName("");
-      setNameError(null);
+  const addBtnRef = useRef<HTMLButtonElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
 
-      // ✅ Option 1: Optimistically update the cache with the new table
-      utils.table.listByBase.setData({ baseId }, (old) => {
-        if (!old) return [newTable];
-        return [...old, newTable];
-      });
-
-      // ✅ Option 2: Navigate to the new table (forces a fresh data fetch)
-      // Uncomment this if you want to redirect to the new table
-      router.push(`/base/${baseId}/table/${newTable.id}`);
-
-      // ✅ Invalidate in the background (don't await)
-      void utils.table.listByBase.invalidate({ baseId });
-    },
-    onError: (err) => {
-      console.error("Table creation error:", err); // ✅ Add logging
-
-      if (err.data?.code === "CONFLICT") {
-        setNameError(err.message);
-        return;
-      }
-
-      // ✅ Show the actual error message
-      setNameError(err.message || "Something went wrong");
-    },
-    onSettled: () => {
-      setIsSubmitting(false);
-    },
-  });
-
-  const { data: tables = [] } = api.table.listByBase.useQuery(
+  const { data: tablesData = [] } = api.table.listByBase.useQuery(
     { baseId },
     { enabled: !!baseId },
   );
 
-  const nextDefaultName = useMemo(() => `Table ${tables.length + 1}`, [tables]);
+  const tables = tablesData as TableWithLoading[];
 
+  // Close menu on outside click
   useEffect(() => {
-    if (!open) return;
     const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
-      setOpen(false);
+      const target = e.target as Node;
+
+      if (
+        addMenuOpen &&
+        !addMenuRef.current?.contains(target) &&
+        !addBtnRef.current?.contains(target)
+      ) {
+        setAddMenuOpen(false);
+      }
     };
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setAddMenuOpen(false);
+      }
     };
+
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [addMenuOpen]);
 
-  const handleCreate = () => {
-    if (isSubmitting || create.isPending || name.trim().length === 0) {
-      return;
-    }
+  const handleCreateTable = () => {
+    if (!baseId) return;
 
-    setIsSubmitting(true);
-    setNameError(null);
+    let highestNumber = 0;
+    const regex = /^Table (\d+)$/;
 
-    create.mutate({ baseId, name: name.trim() });
+    tables.forEach((table) => {
+      const match = regex.exec(table.name);
+      if (match?.[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > highestNumber) {
+          highestNumber = num;
+        }
+      }
+    });
+
+    const defaultName = `Table ${highestNumber + 1}`;
+    setAddMenuOpen(false);
+
+    onCreateTable?.(defaultName);
   };
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center">
+      {/* Vertical divider */}
+      <div className="mx-1 h-4 w-px bg-zinc-300" />
+
       <button
-        ref={btnRef}
-        type="button"
-        onClick={() => {
-          setOpen((v) => !v);
-          setName(nextDefaultName);
-          setNameError(null);
-        }}
-        className="flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-white/60"
+        ref={addBtnRef}
+        onClick={() => setAddMenuOpen(!addMenuOpen)}
+        className="flex items-center justify-center rounded p-1.5 text-zinc-600 hover:bg-white/60"
+        aria-label="Add or import"
       >
-        <Plus className="h-4 w-4" />
-        Add or import
+        <Plus className="h-4 w-4" strokeWidth={2} />
       </button>
 
-      {open && (
+      {/* Add menu dropdown */}
+      {addMenuOpen && (
         <div
-          ref={menuRef}
-          className="absolute top-[calc(100%+6px)] left-0 z-50 w-[320px] rounded-lg border border-zinc-200 bg-white p-3 shadow-lg"
+          ref={addMenuRef}
+          className="absolute top-full left-0 z-50 mt-2 w-72 rounded-lg border border-zinc-200 bg-white py-2 shadow-lg"
         >
-          <div className="text-xs font-semibold text-zinc-700">
-            Create new table
+          {/* Add a blank table section */}
+          <div className="px-4 py-2 text-xs font-medium text-zinc-500">
+            Add a blank table
+          </div>
+          <button
+            className="w-full px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-blue-50"
+            onClick={handleCreateTable}
+          >
+            Start from scratch
+          </button>
+
+          <div className="my-2 border-t border-zinc-200" />
+
+          {/* Build with Omni section */}
+          <div className="px-4 py-2 text-xs font-medium text-zinc-500">
+            Build with Omni
+          </div>
+          <button className="w-full px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            New table
+          </button>
+          <button className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <span>New table with web data</span>
+            <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+              Beta
+            </span>
+          </button>
+
+          <div className="my-2 border-t border-zinc-200" />
+
+          {/* Add from other sources section */}
+          <div className="px-4 py-2 text-xs font-medium text-zinc-500">
+            Add from other sources
           </div>
 
-          <div className="relative mt-2">
-            <label className="text-xs text-zinc-500">Table name</label>
-            <input
-              className="mt-1 h-9 w-full rounded-md border px-3 text-sm outline-none focus:border-blue-600"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setNameError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCreate();
-                }
-              }}
-              disabled={isSubmitting}
-              autoFocus // ✅ Add autofocus
-            />
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <img
+                src="/airtable.png"
+                alt="Airtable"
+                className="h-4 w-4 object-contain"
+              />
+            </div>
+            <span>Airtable base</span>
+          </button>
 
-            {nameError && (
-              <div className="absolute top-[64px] left-2 z-50">
-                <div className="ml-4 h-0 w-0 border-r-[8px] border-b-[8px] border-l-[8px] border-r-transparent border-b-rose-300 border-l-transparent" />
-                <div className="mt-1 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 shadow-sm">
-                  {nameError}
-                </div>
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <FileSpreadsheet className="h-4 w-4 text-zinc-500" />
+            </div>
+            <span>CSV file</span>
+          </button>
+
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <Calendar className="h-4 w-4 text-blue-600" />
+            </div>
+            <span>Google Calendar</span>
+          </button>
+
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <Sheet className="h-4 w-4 text-green-600" />
+            </div>
+            <span>Google Sheets</span>
+          </button>
+
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <FileUp className="h-4 w-4 text-green-700" />
+            </div>
+            <span>Microsoft Excel</span>
+          </button>
+
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <Sparkles className="h-4 w-4 text-blue-500" />
+            </div>
+            <span>Salesforce</span>
+            <span className="ml-auto rounded-full border border-blue-200 bg-blue-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+              Business
+            </span>
+          </button>
+
+          <button className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex h-5 w-5 items-center justify-center">
+              <FileSpreadsheet className="h-4 w-4 text-zinc-700" />
+            </div>
+            <span>Smartsheet</span>
+          </button>
+
+          <button className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
+            <div className="flex items-center gap-3">
+              <div className="flex h-5 w-5 items-center justify-center">
+                <Layers className="h-4 w-4 text-zinc-400" />
               </div>
-            )}
-          </div>
-
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              disabled={isSubmitting}
-              className="h-9 rounded-md px-3 text-sm hover:bg-zinc-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              disabled={
-                isSubmitting || create.isPending || name.trim().length === 0
-              }
-              onClick={handleCreate}
-              className="h-9 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {isSubmitting || create.isPending ? "Creating…" : "Create"}
-            </button>
-          </div>
-
-          <div className="mt-3 border-t pt-3">
-            <button
-              type="button"
-              className="w-full rounded-md px-2 py-2 text-left text-sm text-zinc-600 hover:bg-zinc-50"
-              disabled={isSubmitting}
-              onClick={() => {
-                alert("Import coming soon");
-              }}
-            >
-              Import data (CSV) — coming soon
-            </button>
-          </div>
+              <span>26 more sources...</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-zinc-400" />
+          </button>
         </div>
       )}
     </div>

@@ -180,7 +180,6 @@ export const rowRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { tableId, count } = input;
 
-      // Get the highest rowIndex, not the count
       const lastRow = await ctx.db.row.findFirst({
         where: { tableId },
         orderBy: { rowIndex: "desc" },
@@ -194,44 +193,52 @@ export const rowRouter = createTRPCRouter({
         select: { id: true, name: true, type: true },
       });
 
-      // 1. Create ALL rows in one bulk insert
-      const rowData = Array.from({ length: count }, (_, i) => ({
+      // ✅ FIRST: Create and populate a small batch SYNCHRONOUSLY (1000 rows)
+      const INITIAL_BATCH = 1000;
+      const initialCount = Math.min(INITIAL_BATCH, count);
+
+      console.log(`🚀 Creating initial ${initialCount} rows with data...`);
+
+      // Create initial rows
+      const initialRowData = Array.from({ length: initialCount }, (_, i) => ({
         tableId,
         rowIndex: startIndex + i,
       }));
 
-      await ctx.db.row.createMany({ data: rowData });
+      await ctx.db.row.createMany({ data: initialRowData });
 
-      // 2. Fetch the newly created rows so we have their IDs
-      const newRows = await ctx.db.row.findMany({
+      // Fetch the initial row IDs
+      const initialRows = await ctx.db.row.findMany({
         where: {
           tableId,
-          rowIndex: { gte: startIndex, lt: startIndex + count },
+          rowIndex: {
+            gte: startIndex,
+            lt: startIndex + initialCount,
+          },
         },
-        select: { id: true, rowIndex: true },
+        select: { id: true },
         orderBy: { rowIndex: "asc" },
       });
 
-      // 3. Build cell data with faker.js
-      const allCells: {
+      // Create cells for initial rows immediately
+      const initialCells: {
         rowId: string;
         columnId: string;
         textValue?: string | null;
         numberValue?: number | null;
       }[] = [];
 
-      for (const row of newRows) {
+      for (const row of initialRows) {
         for (const col of columns) {
           if (col.type === "NUMBER") {
-            allCells.push({
+            initialCells.push({
               rowId: row.id,
               columnId: col.id,
               textValue: null,
               numberValue: faker.number.int({ min: 1, max: 10000 }),
             });
           } else {
-            // Use faker for text data
-            allCells.push({
+            initialCells.push({
               rowId: row.id,
               columnId: col.id,
               textValue: faker.lorem.words(3),
@@ -241,14 +248,107 @@ export const rowRouter = createTRPCRouter({
         }
       }
 
-      // 4. Insert cells in chunks
-      const CHUNK_SIZE = 10_000;
-      for (let i = 0; i < allCells.length; i += CHUNK_SIZE) {
-        const chunk = allCells.slice(i, i + CHUNK_SIZE);
-        await ctx.db.cell.createMany({ data: chunk });
+      await ctx.db.cell.createMany({ data: initialCells });
+
+      console.log(`✅ Initial ${initialCount} rows ready with data!`);
+
+      // ✅ THEN: Create remaining rows and cells in background
+      const remainingCount = count - initialCount;
+
+      if (remainingCount > 0) {
+        void (async () => {
+          try {
+            console.log(`🔄 Creating remaining ${remainingCount} rows...`);
+
+            // Create remaining rows
+            const remainingRowData = Array.from(
+              { length: remainingCount },
+              (_, i) => ({
+                tableId,
+                rowIndex: startIndex + initialCount + i,
+              }),
+            );
+
+            await ctx.db.row.createMany({ data: remainingRowData });
+
+            // Populate cells in batches
+            const BATCH_SIZE = 5000;
+            const batches = Math.ceil(remainingCount / BATCH_SIZE);
+
+            for (let batch = 0; batch < batches; batch++) {
+              const batchStart = batch * BATCH_SIZE;
+              const batchCount = Math.min(
+                BATCH_SIZE,
+                remainingCount - batchStart,
+              );
+
+              const batchRows = await ctx.db.row.findMany({
+                where: {
+                  tableId,
+                  rowIndex: {
+                    gte: startIndex + initialCount + batchStart,
+                    lt: startIndex + initialCount + batchStart + batchCount,
+                  },
+                },
+                select: { id: true },
+                orderBy: { rowIndex: "asc" },
+              });
+
+              const batchCells: {
+                rowId: string;
+                columnId: string;
+                textValue?: string | null;
+                numberValue?: number | null;
+              }[] = [];
+
+              for (const row of batchRows) {
+                for (const col of columns) {
+                  if (col.type === "NUMBER") {
+                    batchCells.push({
+                      rowId: row.id,
+                      columnId: col.id,
+                      textValue: null,
+                      numberValue: faker.number.int({ min: 1, max: 10000 }),
+                    });
+                  } else {
+                    batchCells.push({
+                      rowId: row.id,
+                      columnId: col.id,
+                      textValue: faker.lorem.words(3),
+                      numberValue: null,
+                    });
+                  }
+                }
+              }
+
+              // Insert in chunks
+              const CELL_CHUNK_SIZE = 10_000;
+              for (let i = 0; i < batchCells.length; i += CELL_CHUNK_SIZE) {
+                const chunk = batchCells.slice(i, i + CELL_CHUNK_SIZE);
+                await ctx.db.cell.createMany({ data: chunk });
+              }
+
+              console.log(`✅ Batch ${batch + 1}/${batches} complete`);
+
+              if (batch < batches - 1) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+              }
+            }
+
+            console.log(`🎉 All ${count} rows complete!`);
+          } catch (error) {
+            console.error("❌ Error in background population:", error);
+          }
+        })();
       }
 
-      return { insertedRows: newRows.length };
+      // ✅ Return immediately - first 1000 rows are ready with data
+      return {
+        success: true,
+        insertedRows: count,
+        initialBatch: initialCount,
+        message: `Created ${initialCount} rows with data, ${remainingCount} more loading in background`,
+      };
     }),
   /** -----------------------------------------
    * REORDER ROWS (future use)

@@ -35,6 +35,9 @@ export default function ViewActionBar() {
     sorts,
     setSorts,
     dataQueryKey,
+    setIsBulkLoading,
+    optimisticRowCount,
+    setOptimisticRowCount,
   } = useTableView();
   const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -43,7 +46,8 @@ export default function ViewActionBar() {
   const [hideFieldsPanelOpen, setHideFieldsPanelOpen] = useState(false);
   const hideFieldsButtonRef = useRef<HTMLButtonElement>(null);
 
-  const { hiddenColumnIds } = useTableView(); // ✅ Get hidden columns
+  const { hiddenColumnIds } = useTableView();
+
   // Set the refs in context when component mounts
   useEffect(() => {
     setSearchButtonRef(searchButtonRef);
@@ -55,38 +59,35 @@ export default function ViewActionBar() {
     onMutate: async ({ count }) => {
       if (!dataQueryKey) return;
 
-      await utils.table.getData.cancel(dataQueryKey);
-
-      const previous = utils.table.getData.getInfiniteData(dataQueryKey);
-
-      utils.table.getData.setInfiniteData(dataQueryKey, (old) => {
-        if (!old || !count) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page, i) =>
-            i === 0 ? { ...page, totalCount: page.totalCount + count } : page,
-          ),
-        };
+      setOptimisticRowCount((prev) => {
+        const current = prev ?? data?.pages[0]?.totalCount ?? 0;
+        return current + 100_000;
       });
+
+      await utils.table.getData.cancel(dataQueryKey);
+      const previous = utils.table.getData.getInfiniteData(dataQueryKey);
 
       return { previous };
     },
 
     onSuccess: async () => {
-      if (!dataQueryKey) return;
-      await utils.table.getData.invalidate(dataQueryKey);
+      console.log("✅ Seed mutation complete");
     },
 
     onError: (_err, _vars, ctx) => {
       if (!dataQueryKey || !ctx?.previous) return;
       utils.table.getData.setInfiniteData(dataQueryKey, ctx.previous);
+      setIsBulkLoading?.(false);
     },
   });
 
   const handleSeed = () => {
     if (seedRows.isPending) return;
     if (!confirm("Add 100,000 fake rows to this table?")) return;
+
+    // ✅ Set bulk loading BEFORE mutation
+    setIsBulkLoading?.(true);
+
     seedRows.mutate({ tableId, count: 100_000 });
   };
 
@@ -242,12 +243,12 @@ export default function ViewActionBar() {
             <Search className="h-4 w-4 text-zinc-600" />
           </button>
         </div>
-              <HideFieldsPanel
-        isOpen={hideFieldsPanelOpen}
-        onClose={() => setHideFieldsPanelOpen(false)}
-        columns={data?.pages[0]?.columns ?? []}
-        triggerRef={hideFieldsButtonRef}
-      />
+        <HideFieldsPanel
+          isOpen={hideFieldsPanelOpen}
+          onClose={() => setHideFieldsPanelOpen(false)}
+          columns={data?.pages[0]?.columns ?? []}
+          triggerRef={hideFieldsButtonRef}
+        />
       </div>
     </div>
   );

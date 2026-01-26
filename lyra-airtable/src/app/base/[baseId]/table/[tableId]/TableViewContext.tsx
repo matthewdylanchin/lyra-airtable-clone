@@ -57,6 +57,10 @@ type TableViewContextType = {
   isBusy: boolean;
   setIsBusy: (v: boolean) => void;
 
+  // ✅ NEW: Bulk loading state (for 100k rows)
+  isBulkLoading: boolean;
+  setIsBulkLoading: (v: boolean) => void;
+
   // ✅ NEW: Views
   views: View[];
   viewsLoading: boolean;
@@ -70,6 +74,8 @@ type TableViewContextType = {
   isViewDirty: boolean; // Has unsaved changes
   hiddenColumnIds: string[];
   setHiddenColumnIds: (ids: string[]) => void;
+  optimisticRowCount: number | null;
+  setOptimisticRowCount: React.Dispatch<React.SetStateAction<number | null>>;
 };
 
 const TableViewContext = createContext<TableViewContextType | null>(null);
@@ -105,6 +111,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     null,
   );
 
+  // ✅ NEW: Bulk loading state (for 100k rows feature)
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+
   const lastLoadedViewId = useRef<string | null>(null); // ✅ Add this
   // ✅ NEW: View state
   const [currentViewId, setCurrentViewId] = useState<string | null>(() => {
@@ -115,6 +124,10 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
   const [isViewDirty, setIsViewDirty] = useState(false);
   const isLoadingView = useRef(false); // Prevent save while loading
+
+  const [optimisticRowCount, setOptimisticRowCount] = useState<number | null>(
+    null,
+  );
 
   const utils = api.useUtils();
 
@@ -367,6 +380,7 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
     setFilterPanelOpen(false);
     setSortPanelOpen(false);
     setIsViewDirty(false);
+    setIsBulkLoading(false); // ✅ Reset bulk loading state
     hasAttemptedAutoCreate.current = false;
     isLoadingView.current = false;
   }, [tableId]);
@@ -415,6 +429,10 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
         isBusy,
         setIsBusy,
 
+        // ✅ NEW: Bulk loading
+        isBulkLoading,
+        setIsBulkLoading,
+
         // Views
         views,
         viewsLoading,
@@ -429,6 +447,9 @@ export function TableViewProvider({ children }: { children: React.ReactNode }) {
 
         hiddenColumnIds,
         setHiddenColumnIds,
+
+        optimisticRowCount,
+        setOptimisticRowCount,
       }}
     >
       {children}
