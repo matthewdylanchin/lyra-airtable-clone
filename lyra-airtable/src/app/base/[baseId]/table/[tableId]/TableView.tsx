@@ -146,7 +146,7 @@ export function TableView({
             ...lastPage,
             rows: [...lastPage.rows, tempRow],
             cells: [...lastPage.cells, ...tempCells],
-            totalCount: currentRowCount + pendingCount + 1,
+            totalCount: (lastPage.totalCount ?? 0) + 1,
           };
         }
 
