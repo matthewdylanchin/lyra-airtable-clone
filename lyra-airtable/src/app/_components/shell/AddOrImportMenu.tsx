@@ -130,7 +130,7 @@ export default function AddOrImportMenu({
           </button>
           <button className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-zinc-900 hover:bg-zinc-50">
             <span>New table with web data</span>
-            <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+            <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
               Beta
             </span>
           </button>
@@ -182,7 +182,7 @@ export default function AddOrImportMenu({
               <Sparkles className="h-4 w-4 text-blue-500" />
             </div>
             <span>Salesforce</span>
-            <span className="ml-auto rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+            <span className="ml-auto rounded-full border border-blue-200 bg-blue-100 px-2 py-0.5 text-xs font-medium text-gray-700">
               Business
             </span>
           </button>
