@@ -550,8 +550,12 @@ export default function TableClient() {
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // ✅ UPDATED: Use totalCount during bulk loading (to show skeletons), otherwise use actual rows length
+  const totalRows = isBulkLoading
+    ? (optimisticRowCount ?? data?.totalCount ?? data?.rows.length ?? 0)
+    : (data?.rows.length ?? 0);
+
   const rowVirtualizer = useVirtualizer({
-    count: data?.rows.length ?? 0, // ✅ only render what is actually loaded
+    count: totalRows,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 150,

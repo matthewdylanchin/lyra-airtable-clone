@@ -16,7 +16,6 @@ type RowContextMenuState = {
   y: number;
 } | null;
 
-
 export function TableView({
   table,
   addColumnOpen,
@@ -97,7 +96,6 @@ export function TableView({
     },
     [onFlushPendingEdits, queryKey, utils.table.getData],
   );
-
 
   /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
 
@@ -529,6 +527,7 @@ export function TableView({
 
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
+              const isSkeletonRow = virtualRow.index >= rows.length;
 
               if (!row) {
                 return (
