@@ -72,8 +72,10 @@ export default function AddOrImportMenu({
     if (!baseId) return;
 
     let highestNumber = 0;
+    const regex = /^Table (\d+)$/;
+
     tables.forEach((table) => {
-      const match = table.name.match(/^Table (\d+)$/);
+      const match = regex.exec(table.name);
       if (match?.[1]) {
         const num = parseInt(match[1], 10);
         if (num > highestNumber) {

@@ -46,8 +46,9 @@ export default function TableTabsBar() {
   // Track tables being deleted to prevent double-clicks
   const deletingTableIds = useRef<Set<string>>(new Set());
 
-  const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const tabRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  // Fix: prefer Record<string, ...> instead of index signature
+  const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const utils = api.useUtils();
 
   if (!baseId) {
@@ -71,7 +72,8 @@ export default function TableTabsBar() {
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
 
-  // Close menus on outside click
+  // Fix: move hook outside conditional to avoid react-hooks/rules-of-hooks error
+  // ✅ Hooks MUST be before any early return
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -104,11 +106,19 @@ export default function TableTabsBar() {
 
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
+
     return () => {
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
   }, [tableMenuOpen, renameModalOpen]);
+
+  // ✅ NOW it's safe to early return
+  if (!baseId) {
+    return (
+      <div className="relative h-[35px] border-b border-zinc-200 bg-violet-50" />
+    );
+  }
 
   const createTable = api.table.create.useMutation({
     onMutate: async (variables) => {
@@ -454,7 +464,7 @@ export default function TableTabsBar() {
                         <span>Clear data</span>
                       </button>
                       <button
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => handleDeleteTable(t.id)}
                         disabled={deletingTableIds.current.has(t.id)}
                       >
