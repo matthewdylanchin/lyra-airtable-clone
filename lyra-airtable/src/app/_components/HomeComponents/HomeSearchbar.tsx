@@ -58,8 +58,8 @@ function HomeSearchBar({ onSearch }: HomeSearchBarProps) {
         <input
           ref={inputRef}
           value={query}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-            setQuery(e.target.value) // ← FIXED: typed event
+          onChange={
+            (e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value) // ← FIXED: typed event
           }
           onBlur={() => {
             if (query === "") setActive(false);

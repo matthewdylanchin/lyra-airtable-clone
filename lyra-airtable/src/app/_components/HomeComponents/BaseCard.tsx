@@ -80,7 +80,7 @@ export default function BaseCard({ base }: { base: BaseCardData }) {
         onClick={(e) => {
           if (menuOpen) e.preventDefault();
         }}
-        className="group flex h-[72px] w-[280px] items-center rounded-lg border border-zinc-200 bg-white px-4 py-3.5 transition-all hover:shadow-md"
+        className="group flex h-[94px] w-[280px] items-center rounded-lg border border-zinc-200 bg-white px-4 py-3.5 transition-all hover:shadow-md"
       >
         <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-purple-200 text-[16px] font-semibold text-purple-800">
           {initials}

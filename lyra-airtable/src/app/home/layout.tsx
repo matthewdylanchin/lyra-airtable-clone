@@ -19,7 +19,7 @@ export default async function HomeLayout({
       <div className="flex min-h-0 flex-1">
         <HomeSidebar />
 
-        <main className="flex-1 overflow-auto bg-white px-8 py-6">
+        <main className="flex-1 overflow-auto bg-zinc-50 px-8 py-6">
           {children}
         </main>
       </div>
