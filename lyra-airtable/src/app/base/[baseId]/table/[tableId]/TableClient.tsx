@@ -54,7 +54,7 @@ type TableDataType = {
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
   const tableId = params.tableId;
-  const {hiddenColumnIds} = useTableView();
+  const { hiddenColumnIds } = useTableView();
 
   const {
     searchBarOpen,
@@ -486,7 +486,7 @@ export default function TableClient() {
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
-        hiddenColumnIds
+        hiddenColumnIds,
       }),
     [
       data,
@@ -523,7 +523,7 @@ export default function TableClient() {
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
-    count: data?.totalCount ?? 0,
+    count: data?.rows.length ?? 0, // ✅ FIX: Use actual rows length to prevent skeleton rows
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 150,
