@@ -26,6 +26,7 @@ type TableWithLoading = {
   createdAt: Date;
   updatedAt: Date;
   _isLoading?: boolean;
+  _isDeleting?: boolean;
 };
 
 export default function TableTabsBar() {
@@ -41,6 +42,9 @@ export default function TableTabsBar() {
   const [pendingCreateName, setPendingCreateName] = useState<string | null>(
     null,
   );
+
+  // Track tables being deleted to prevent double-clicks
+  const deletingTableIds = useRef<Set<string>>(new Set());
 
   const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const tabRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -58,8 +62,10 @@ export default function TableTabsBar() {
   );
 
   // Sort tables by createdAt to ensure new tables appear at the end
+  // Filter out tables that are being deleted
   const tables = (tablesData as TableWithLoading[] | undefined)
     ?.slice()
+    .filter((t) => !t._isDeleting)
     .sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -174,9 +180,28 @@ export default function TableTabsBar() {
   });
 
   const deleteTable = api.table.delete?.useMutation({
-    onSuccess: async () => {
-      if (activeTableId === tableMenuOpen) {
-        const remainingTables = tables?.filter((t) => t.id !== tableMenuOpen);
+    onMutate: async (variables) => {
+      // Don't await - fire and forget to avoid blocking
+      void utils.table.listByBase.cancel({ baseId });
+
+      const previousTables = utils.table.listByBase.getData({ baseId });
+
+      // Mark table as deleting in cache (will be filtered out in render)
+      utils.table.listByBase.setData({ baseId }, (old) => {
+        if (!old) return old;
+        return old.map((t) =>
+          t.id === variables.tableId ? { ...t, _isDeleting: true } : t,
+        ) as TableWithLoading[];
+      });
+
+      // Close menu immediately
+      setTableMenuOpen(null);
+
+      // Handle navigation if deleting active table
+      if (activeTableId === variables.tableId) {
+        const remainingTables = previousTables?.filter(
+          (t) => t.id !== variables.tableId,
+        );
         const firstTable = remainingTables?.[0];
 
         if (firstTable) {
@@ -185,8 +210,36 @@ export default function TableTabsBar() {
           router.push(`/base/${baseId}`);
         }
       }
+
+      return { previousTables, tableId: variables.tableId };
+    },
+
+    onSuccess: async (_data, _variables, context) => {
+      // Remove from tracking set
+      if (context?.tableId) {
+        deletingTableIds.current.delete(context.tableId);
+      }
+
+      // Actually remove the table from cache now
+      utils.table.listByBase.setData({ baseId }, (old) => {
+        if (!old) return old;
+        return old.filter((t) => t.id !== context?.tableId);
+      });
+
+      // Invalidate to sync with server
       await utils.table.listByBase.invalidate({ baseId });
-      setTableMenuOpen(null);
+    },
+
+    onError: (err, variables, context) => {
+      console.error("Failed to delete table:", err);
+
+      // Remove from tracking set
+      deletingTableIds.current.delete(variables.tableId);
+
+      // Restore previous state
+      if (context?.previousTables) {
+        utils.table.listByBase.setData({ baseId }, context.previousTables);
+      }
     },
   });
 
@@ -235,6 +288,14 @@ export default function TableTabsBar() {
   };
 
   const handleDeleteTable = (tableId: string) => {
+    // Prevent double-clicks
+    if (deletingTableIds.current.has(tableId)) {
+      return;
+    }
+
+    // Track this table as being deleted
+    deletingTableIds.current.add(tableId);
+
     deleteTable?.mutate({ tableId });
   };
 
@@ -393,8 +454,9 @@ export default function TableTabsBar() {
                         <span>Clear data</span>
                       </button>
                       <button
-                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-zinc-50"
+                        className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-red-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => handleDeleteTable(t.id)}
+                        disabled={deletingTableIds.current.has(t.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                         <span>Delete table</span>
