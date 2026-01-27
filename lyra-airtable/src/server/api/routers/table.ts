@@ -468,7 +468,7 @@ export const tableRouter = createTRPCRouter({
       let totalCount;
 
       if (sorts && sorts.length > 0) {
-        // ✅ Validate all sort columns exist and get their types
+        // Validate all sort columns exist and get their types
         const sortColumns = sorts.map((sort) => {
           const column = columns.find((c) => c.id === sort.columnId);
           if (!column) {
@@ -480,7 +480,7 @@ export const tableRouter = createTRPCRouter({
           return { ...sort, column };
         });
 
-        // ✅ Build dynamic SELECT parts for each sort column
+        // Build dynamic SELECT parts for each sort column
         const selectParts = sortColumns
           .map((sort, index) => {
             const isNumber = sort.column.type === "NUMBER";
@@ -504,7 +504,7 @@ export const tableRouter = createTRPCRouter({
           })
           .join(",");
 
-        // ✅ Build dynamic ORDER BY parts for each sort column
+        // Build dynamic ORDER BY parts
         const orderByParts = sortColumns
           .map((sort, index) => {
             const direction = sort.direction.toUpperCase();
@@ -515,23 +515,47 @@ export const tableRouter = createTRPCRouter({
         let sortedRows: Array<{ rowId: string }>;
 
         if (filteredRowIds && filteredRowIds.length > 0) {
-          // With filter - use Prisma.join for the IN clause
-          const filterList = Prisma.join(filteredRowIds);
+          // FIXED: For large filter sets, use a subquery approach instead of IN clause
+          // Batch the IDs if there are too many (PostgreSQL limit is ~32767 bind params)
+          const BATCH_SIZE = 30000;
 
-          sortedRows = await ctx.db.$queryRawUnsafe<Array<{ rowId: string }>>(
-            `
-      SELECT r.id as "rowId",
-        ${selectParts}
-      FROM "Row" r
-      INNER JOIN "Cell" c ON c."rowId" = r.id
-      WHERE r."tableId" = $1
-        AND r.id IN (${filteredRowIds.map((_, i) => `$${i + 2}`).join(", ")})
-      GROUP BY r.id
-      ORDER BY ${orderByParts}
-      `,
-            table.id,
-            ...filteredRowIds,
-          );
+          if (filteredRowIds.length <= BATCH_SIZE) {
+            // Small enough to use IN clause
+            sortedRows = await ctx.db.$queryRawUnsafe<Array<{ rowId: string }>>(
+              `
+        SELECT r.id as "rowId",
+          ${selectParts}
+        FROM "Row" r
+        INNER JOIN "Cell" c ON c."rowId" = r.id
+        WHERE r."tableId" = $1
+          AND r.id IN (${filteredRowIds.map((_, i) => `$${i + 2}`).join(", ")})
+        GROUP BY r.id
+        ORDER BY ${orderByParts}
+        LIMIT ${limit + 1}
+        `,
+              table.id,
+              ...filteredRowIds,
+            );
+          } else {
+            // Too many IDs - use a different approach with ANY and array
+            sortedRows = await ctx.db.$queryRawUnsafe<Array<{ rowId: string }>>(
+              `
+        SELECT r.id as "rowId",
+          ${selectParts}
+        FROM "Row" r
+        INNER JOIN "Cell" c ON c."rowId" = r.id
+        WHERE r."tableId" = $1
+          AND r.id = ANY($2::text[])
+        GROUP BY r.id
+        ORDER BY ${orderByParts}
+        LIMIT ${limit + 1}
+        `,
+              table.id,
+              filteredRowIds,
+            );
+          }
+
+          totalCount = filteredRowIds.length;
         } else {
           // No filter
           sortedRows = await ctx.db.$queryRawUnsafe<Array<{ rowId: string }>>(
@@ -543,39 +567,80 @@ export const tableRouter = createTRPCRouter({
       WHERE r."tableId" = $1
       GROUP BY r.id
       ORDER BY ${orderByParts}
+      LIMIT ${limit + 1}
       `,
             table.id,
           );
+
+          totalCount = await ctx.db.row.count({ where: { tableId: table.id } });
         }
 
         const sortedRowIds = sortedRows.map((r) => r.rowId);
-        const rowsToFetch = sortedRowIds.slice(0, limit + 1);
 
-        [rows, totalCount] = await Promise.all([
-          ctx.db.row.findMany({
-            where: { id: { in: rowsToFetch } },
-            select: { id: true, rowIndex: true },
-          }),
-          ctx.db.row.count({ where: rowWhere }),
-        ]);
+        rows = await ctx.db.row.findMany({
+          where: { id: { in: sortedRowIds } },
+          select: { id: true, rowIndex: true },
+        });
 
         // Preserve sort order from the raw query
         const rowMap = new Map(rows.map((r) => [r.id, r]));
-        rows = rowsToFetch
+        rows = sortedRowIds
           .map((id) => rowMap.get(id))
           .filter((r): r is NonNullable<typeof r> => r !== undefined);
       } else {
-        // ✅ No sorting - use default pagination by rowIndex
-        [rows, totalCount] = await Promise.all([
-          ctx.db.row.findMany({
-            where: rowWhere,
-            orderBy: { rowIndex: "asc" },
-            take: limit + 1,
-            select: { id: true, rowIndex: true },
-          }),
-          ctx.db.row.count({ where: rowWhere }),
-        ]);
+        // No sorting - use default pagination by rowIndex
+        if (filteredRowIds && filteredRowIds.length > 0) {
+          // FIXED: Use ANY instead of IN for large arrays
+          const BATCH_SIZE = 30000;
+
+          if (filteredRowIds.length <= BATCH_SIZE) {
+            rows = await ctx.db.row.findMany({
+              where: {
+                tableId: table.id,
+                id: { in: filteredRowIds },
+                ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+              },
+              orderBy: { rowIndex: "asc" },
+              take: limit + 1,
+              select: { id: true, rowIndex: true },
+            });
+          } else {
+            // Use raw query with ANY for large arrays
+            const rowsRaw = await ctx.db.$queryRawUnsafe<
+              Array<{ id: string; rowIndex: number }>
+            >(
+              `
+        SELECT id, "rowIndex"
+        FROM "Row"
+        WHERE "tableId" = $1
+          AND id = ANY($2::text[])
+          ${cursor !== undefined ? `AND "rowIndex" > ${cursor}` : ""}
+        ORDER BY "rowIndex" ASC
+        LIMIT ${limit + 1}
+        `,
+              table.id,
+              filteredRowIds,
+            );
+            rows = rowsRaw;
+          }
+
+          totalCount = filteredRowIds.length;
+        } else {
+          [rows, totalCount] = await Promise.all([
+            ctx.db.row.findMany({
+              where: {
+                tableId: table.id,
+                ...(cursor !== undefined ? { rowIndex: { gt: cursor } } : {}),
+              },
+              orderBy: { rowIndex: "asc" },
+              take: limit + 1,
+              select: { id: true, rowIndex: true },
+            }),
+            ctx.db.row.count({ where: { tableId: table.id } }),
+          ]);
+        }
       }
+
       // ========== PAGINATION ==========
       const hasMore = rows.length > limit;
       const resultRows = hasMore ? rows.slice(0, limit) : rows;
