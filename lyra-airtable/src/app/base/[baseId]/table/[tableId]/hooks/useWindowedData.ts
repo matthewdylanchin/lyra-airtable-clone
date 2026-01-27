@@ -205,9 +205,13 @@ export function useWindowedData({
           const newCellCache = new Map(prev.cellCache);
 
           // Only add rows that aren't soft-deleted
-          const filteredRows = result.rows.filter(
-            (row) => !prev.deletedRowIds.has(row.id),
-          ) as RowData[];
+          const filteredRows = result.rows.filter((row) => {
+            // Ignore rows that replace optimistic ones
+            for (const opt of prev.optimisticRows.values()) {
+              if (opt.row.id === row.id) return false;
+            }
+            return !prev.deletedRowIds.has(row.id);
+          });
 
           newRowCache.set(offset, filteredRows);
 
@@ -270,9 +274,9 @@ export function useWindowedData({
       ...prev,
       table: null,
       columns: [],
-      totalCount: 0,
-      rowCache: new Map(),
-      cellCache: new Map(),
+      totalCount: prev.totalCount, // KEEP count
+      rowCache: prev.rowCache, // ✅ DO NOT CLEAR
+      cellCache: prev.cellCache, // ✅ DO NOT CLEAR
       loadingRanges: new Set(),
       isInitialLoading: true,
       error: null,
@@ -316,27 +320,26 @@ export function useWindowedData({
     );
   }, [state.totalCount, state.optimisticRows.size, state.deletedRowIds.size]);
 
-  // Get row at index
   const getRowAtIndex = useCallback(
     (index: number): RowData | null => {
-      // Check if this index is an optimistic row (at the end)
-      if (index >= state.totalCount) {
-        const optimisticIndex = index - state.totalCount;
-        const optimisticEntries = Array.from(state.optimisticRows.values());
-        if (optimisticIndex < optimisticEntries.length) {
-          return optimisticEntries[optimisticIndex]?.row ?? null;
-        }
-        return null;
+      const serverRowCount = state.totalCount;
+
+      // Optimistic rows
+      if (index >= serverRowCount) {
+        const optimisticIndex = index - serverRowCount;
+        const optimisticRows = Array.from(state.optimisticRows.values());
+        return optimisticRows[optimisticIndex]?.row ?? null;
       }
 
-      // Check cached data
+      // Server rows
       for (const [offset, rows] of state.rowCache) {
         if (index >= offset && index < offset + rows.length) {
           const row = rows[index - offset];
-          // Filter out deleted rows
-          if (row && !state.deletedRowIds.has(row.id)) {
-            return row;
-          }
+
+          if (!row) return null;
+          if (state.deletedRowIds.has(row.id)) return null;
+
+          return row;
         }
       }
 
@@ -353,21 +356,9 @@ export function useWindowedData({
   // Check if row is loaded
   const isRowLoaded = useCallback(
     (index: number): boolean => {
-      // Optimistic rows are always "loaded"
-      if (index >= state.totalCount) {
-        const optimisticIndex = index - state.totalCount;
-        return optimisticIndex < state.optimisticRows.size;
-      }
-
-      for (const [offset, rows] of state.rowCache) {
-        if (index >= offset && index < offset + rows.length) {
-          return true;
-        }
-      }
-
-      return false;
+      return getRowAtIndex(index) !== null;
     },
-    [state.rowCache, state.totalCount, state.optimisticRows.size],
+    [getRowAtIndex],
   );
 
   // Get cell value - checks pending edits first, then optimistic, then cache
@@ -488,17 +479,14 @@ export function useWindowedData({
     setState((prev) => {
       const newOptimisticRows = new Map(prev.optimisticRows);
 
-      const newRowIndex = prev.totalCount + prev.optimisticRows.size;
-
       const optimisticRow: RowData = {
         id: tempId,
-        rowIndex: newRowIndex,
+        rowIndex: prev.totalCount + prev.optimisticRows.size,
       };
 
-      // Use allColumns to include optimistic columns
       const columnsToUse = [
         ...prev.columns,
-        ...Array.from(prev.optimisticColumns.values()).map((opt) => opt.column),
+        ...Array.from(prev.optimisticColumns.values()).map((c) => c.column),
       ];
 
       const optimisticCells: CellData[] = columnsToUse.map((col) => ({
@@ -515,9 +503,11 @@ export function useWindowedData({
         cells: optimisticCells,
       });
 
+      // ✅ KEY CHANGE: Don't add to rowCache!
       return {
         ...prev,
         optimisticRows: newOptimisticRows,
+        // rowCache unchanged - keep optimistic separate
       };
     });
   }, []);
@@ -562,9 +552,20 @@ export function useWindowedData({
       const newOptimisticRows = new Map(prev.optimisticRows);
       newOptimisticRows.delete(tempId);
 
+      const newRowCache = new Map(prev.rowCache);
+      for (const [offset, rows] of newRowCache) {
+        const filtered = rows.filter((r) => r.id !== tempId);
+        if (filtered.length !== rows.length) {
+          newRowCache.set(offset, filtered);
+        }
+      }
+
       return {
         ...prev,
         optimisticRows: newOptimisticRows,
+        rowCache: newRowCache,
+        // ✅ KEY CHANGE: Don't modify totalCount
+        // totalCount: prev.totalCount - 1, // ❌ REMOVE THIS
       };
     });
   }, []);
@@ -575,16 +576,49 @@ export function useWindowedData({
         const optimisticRow = prev.optimisticRows.get(tempId);
         if (!optimisticRow) return prev;
 
+        // ✅ Update the ID in place, don't remove it yet
         const newOptimisticRows = new Map(prev.optimisticRows);
-        newOptimisticRows.delete(tempId);
 
-        // Don't add to cache immediately - let the next fetch handle it
-        // This prevents race conditions with server updates
+        // Replace temp row with real ID but keep it optimistic
+        newOptimisticRows.set(tempId, {
+          ...optimisticRow,
+          row: {
+            ...optimisticRow.row,
+            id: realId, // ✅ Update to real ID
+          },
+        });
+
+        // Update cells to use real ID
+        const updatedCells = optimisticRow.cells.map((cell) => ({
+          ...cell,
+          rowId: realId,
+          id: `${realId}-${cell.columnId}`,
+        }));
+
+        newOptimisticRows.set(tempId, {
+          ...optimisticRow,
+          row: { ...optimisticRow.row, id: realId },
+          cells: updatedCells,
+        });
+
+        // Update pending edits
+        const newPendingCellEdits = new Map(prev.pendingCellEdits);
+        for (const [key, edit] of newPendingCellEdits) {
+          if (key.startsWith(`${tempId}:`)) {
+            const columnId = key.split(":")[1];
+            newPendingCellEdits.delete(key);
+            newPendingCellEdits.set(`${realId}:${columnId}`, {
+              ...edit,
+              rowId: realId,
+            });
+          }
+        }
 
         return {
           ...prev,
           optimisticRows: newOptimisticRows,
-          totalCount: prev.totalCount + 1,
+          pendingCellEdits: newPendingCellEdits,
+          // ✅ Don't touch totalCount or rowCache
         };
       });
     },

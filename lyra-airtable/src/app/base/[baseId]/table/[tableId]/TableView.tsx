@@ -97,7 +97,6 @@ export function TableView({
       const tempRowId = `temp-${crypto.randomUUID()}`;
       pendingTempIds.current.add(tempRowId);
 
-      // Add optimistic row to windowed data
       if (addOptimisticRow) {
         addOptimisticRow(tempRowId);
       }
@@ -109,25 +108,24 @@ export function TableView({
       if (ctx?.tempRowId) {
         pendingTempIds.current.delete(ctx.tempRowId);
 
-        // Flush pending edits (this will also replace the temp ID)
         if (onFlushPendingEdits) {
           onFlushPendingEdits(ctx.tempRowId, realRow.id);
         }
       }
+      // ✅ KEY CHANGE: Don't invalidate cache!
+      // await utils.table.getDataWindowed.invalidate({ tableId }); // ❌ REMOVE
     },
 
     onError: (_err, _vars, ctx) => {
       if (ctx?.tempRowId) {
         pendingTempIds.current.delete(ctx.tempRowId);
 
-        // Remove optimistic row
         if (removeOptimisticRow) {
           removeOptimisticRow(ctx.tempRowId);
         }
       }
     },
   });
-
   // ⚡ OPTIMISTIC: Insert row above/below
   const insertRow = api.row.insertAtPosition.useMutation({
     onMutate: (variables) => {
@@ -150,7 +148,6 @@ export function TableView({
 
       return { tempRowId };
     },
-
     onSuccess: async (realRow, _, ctx) => {
       if (ctx?.tempRowId && realRow?.id) {
         pendingTempIds.current.delete(ctx.tempRowId);
@@ -160,8 +157,11 @@ export function TableView({
         }
       }
 
-      // Invalidate to get proper ordering
-      await utils.table.getDataWindowed.invalidate({ tableId });
+      // ✅ Delay invalidation to let optimistic update settle
+      setTimeout(() => {
+        void utils.table.getDataWindowed.invalidate({ tableId });
+      }, 100);
+
       setRowMenu(null);
     },
 
