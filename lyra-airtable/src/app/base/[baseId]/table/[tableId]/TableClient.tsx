@@ -212,8 +212,11 @@ export default function TableClient() {
     },
 
     onSuccess: (_data, variables) => {
-      // Clear pending edit - allow server data to show
-      clearPendingCellEdit(variables.rowId, variables.columnId);
+      // ✅ Clear pending edit AND update cache with the new value immediately
+      clearPendingCellEdit(variables.rowId, variables.columnId, {
+        textValue: variables.textValue ?? null,
+        numberValue: variables.numberValue ?? null,
+      });
 
       setPendingUpdates((prev) => {
         const next = { ...prev };
@@ -223,7 +226,7 @@ export default function TableClient() {
     },
 
     onError: (_err, variables) => {
-      // Clear pending edit on error
+      // Clear pending edit on error (no new value since it failed)
       clearPendingCellEdit(variables.rowId, variables.columnId);
 
       setPendingUpdates((prev) => {
@@ -233,7 +236,6 @@ export default function TableClient() {
       });
     },
   });
-
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
 
   // Build table data from windowed cache + optimistic + pending edits

@@ -104,7 +104,11 @@ interface UseWindowedDataReturn {
     textValue: string | null,
     numberValue: number | null,
   ) => void;
-  clearPendingCellEdit: (rowId: string, columnId: string) => void;
+  clearPendingCellEdit: (
+    rowId: string,
+    columnId: string,
+    newValue?: { textValue: string | null; numberValue: number | null },
+  ) => void;
   invalidateCache: () => void;
   // For compatibility
   cellByKey: Map<string, CellData>;
@@ -824,16 +828,36 @@ export function useWindowedData({
     [],
   );
 
+  // ✅ FIXED: Update cellCache immediately when clearing pending edits
   const clearPendingCellEdit = useCallback(
-    (rowId: string, columnId: string) => {
+    (
+      rowId: string,
+      columnId: string,
+      newValue?: { textValue: string | null; numberValue: number | null },
+    ) => {
       setState((prev) => {
         const newPendingCellEdits = new Map(prev.pendingCellEdits);
         const cellKey = `${rowId}:${columnId}`;
         newPendingCellEdits.delete(cellKey);
 
+        // ✅ If we have a new value, immediately update the cellCache
+        const newCellCache = new Map(prev.cellCache);
+        if (newValue) {
+          const existingCell = prev.cellCache.get(cellKey);
+          newCellCache.set(cellKey, {
+            id: existingCell?.id ?? `${rowId}-${columnId}`,
+            rowId,
+            columnId,
+            textValue: newValue.textValue,
+            numberValue: newValue.numberValue,
+            updatedAt: new Date(),
+          });
+        }
+
         return {
           ...prev,
           pendingCellEdits: newPendingCellEdits,
+          cellCache: newValue ? newCellCache : prev.cellCache,
         };
       });
     },
