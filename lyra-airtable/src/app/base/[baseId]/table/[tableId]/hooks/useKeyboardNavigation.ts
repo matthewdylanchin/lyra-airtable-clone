@@ -1,5 +1,5 @@
-// table/useKeyboardNavigation.ts
-import { useEffect } from "react";
+// table/useKeyboardNavigation.ts - ULTRA OPTIMIZED VERSION
+import { useEffect, useRef } from "react";
 import type { Table } from "@tanstack/react-table";
 import type { SelectedCell, TableRow, Editing } from "../types";
 
@@ -17,7 +17,7 @@ export function useKeyboardNavigation({
   selectedCell: SelectedCell;
   setSelectedCell: (v: SelectedCell) => void;
   editing: Editing;
-  editingRef: React.MutableRefObject<Editing>; // ✅ Add editingRef
+  editingRef: React.MutableRefObject<Editing>;
   startEdit: (
     rowId: string,
     columnId: string,
@@ -25,28 +25,37 @@ export function useKeyboardNavigation({
     initialChar?: string,
   ) => void;
   setDraft: (v: string) => void;
-  commitEdit: () => void; // ✅ Add commitEdit
+  commitEdit: () => void;
 }) {
+  // ✅ Keep a ref of selectedCell for instant synchronous access
+  const selectedCellRef = useRef(selectedCell);
+
+  useEffect(() => {
+    selectedCellRef.current = selectedCell;
+  }, [selectedCell]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // ✅ Handle Tab specially even when editing
+      // ✅ CRITICAL: Handle Tab with HIGHEST PRIORITY
       if (e.key === "Tab") {
         e.preventDefault();
+        e.stopPropagation(); // ✅ Stop event from bubbling
 
-        const isEditing = editingRef.current !== null; // ✅ Check ref, not state
+        const isEditing = editingRef.current !== null;
 
         if (isEditing) {
-          // ✅ Commit the edit immediately (synchronous)
+          // ✅ Commit synchronously (no await, no Promise)
           commitEdit();
         }
 
-        if (!selectedCell) return;
+        const currentCell = selectedCellRef.current; // ✅ Use ref
+        if (!currentCell) return;
 
         const rows = table.getRowModel().rows;
         const cols = table.getAllLeafColumns();
         if (!rows.length || !cols.length) return;
 
-        let { rowIndex, colIndex } = selectedCell;
+        let { rowIndex, colIndex } = currentCell;
 
         if (e.shiftKey) {
           // ⬅ Shift + Tab
@@ -66,15 +75,21 @@ export function useKeyboardNavigation({
           }
         }
 
-        // ✅ Move focus immediately (synchronous)
-        setSelectedCell({ rowIndex, colIndex });
+        // ✅ Update ref immediately (for next key press)
+        selectedCellRef.current = { rowIndex, colIndex };
+
+        // ✅ Batch state update with queueMicrotask (non-blocking)
+        queueMicrotask(() => {
+          setSelectedCell({ rowIndex, colIndex });
+        });
+
         return;
       }
 
       // 🚫 Don't handle other keys while editing
       if (editing) return;
 
-      // ✅ Don't capture keys when user is typing in an input, textarea, or contenteditable
+      // ✅ Don't capture keys when user is typing in an input
       const activeElement = document.activeElement;
       const isTypingInInput =
         activeElement instanceof HTMLInputElement ||
@@ -93,7 +108,7 @@ export function useKeyboardNavigation({
       let { rowIndex, colIndex } = selectedCell;
 
       // Start editing when typing a character
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const row = rows[rowIndex];
         const col = cols[colIndex];
         if (!row || !col || col.id === "__index") return;
@@ -135,8 +150,10 @@ export function useKeyboardNavigation({
       setSelectedCell({ rowIndex, colIndex });
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // ✅ Use capture phase for higher priority
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     selectedCell,
     editing,

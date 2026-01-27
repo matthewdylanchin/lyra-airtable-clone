@@ -154,6 +154,119 @@ const EditInput = memo(function EditInput({
   );
 });
 
+// ✅ OPTIMIZED: Memoized cell component that only re-renders when necessary
+const OptimizedTableCell = memo(
+  ({
+    value,
+    rowId,
+    columnId,
+    rowIndex,
+    colIndex,
+    isEditing,
+    isSelected,
+    isPending,
+    isNumberCol,
+    isFilteredColumn,
+    isSortedColumn,
+    isCurrentMatch,
+    isMatch,
+    isBulkLoading,
+    hasRowData,
+    draftRef,
+    setSelectedCell,
+    startEdit,
+    commitEdit,
+    cancelEdit,
+  }: {
+    value: CellValue;
+    rowId: string;
+    columnId: string;
+    rowIndex: number;
+    colIndex: number;
+    isEditing: boolean;
+    isSelected: boolean;
+    isPending: boolean;
+    isNumberCol: boolean;
+    isFilteredColumn: boolean;
+    isSortedColumn: boolean;
+    isCurrentMatch: boolean;
+    isMatch: boolean;
+    isBulkLoading: boolean;
+    hasRowData: boolean;
+    draftRef: MutableRefObject<string>;
+    setSelectedCell: (v: SelectedCell) => void;
+    startEdit: (
+      rowId: string,
+      columnId: string,
+      mode?: "replace" | "append",
+    ) => void;
+    commitEdit: () => void;
+    cancelEdit: () => void;
+  }) => {
+    // Show skeleton for rows without cell data during bulk load
+    if (isBulkLoading && !hasRowData) {
+      return (
+        <div className="flex h-9 items-center px-2.5">
+          <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={cn(
+          "relative flex h-9 w-full cursor-default items-center outline-none",
+          isSelected && "ring-2 ring-blue-600 ring-inset",
+          !isEditing && "hover:bg-zinc-50",
+          // Column highlighting priority: filter (green) > sort (orange)
+          isFilteredColumn && "bg-emerald-50",
+          isSortedColumn && !isFilteredColumn && "bg-orange-50",
+          // Search highlighting (highest priority)
+          isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
+          isMatch &&
+            !isCurrentMatch &&
+            "border-l-2 border-amber-100 bg-amber-100",
+        )}
+        onClick={() => setSelectedCell({ rowIndex, colIndex })}
+        onDoubleClick={() => startEdit(rowId, columnId, "append")}
+      >
+        {isEditing ? (
+          <EditInput
+            rowIndex={rowIndex}
+            columnId={columnId}
+            isNumberCol={isNumberCol}
+            draftRef={draftRef}
+            commitEdit={commitEdit}
+            cancelEdit={cancelEdit}
+          />
+        ) : (
+          <span className="block truncate px-2.5 text-sm text-zinc-600">
+            {String(value ?? "")}
+          </span>
+        )}
+      </div>
+    );
+  },
+  // ✅ CRITICAL: Custom comparison to prevent unnecessary re-renders
+  (prevProps, nextProps) => {
+    // Only re-render if these specific props change
+    return (
+      prevProps.value === nextProps.value &&
+      prevProps.isEditing === nextProps.isEditing &&
+      prevProps.isSelected === nextProps.isSelected &&
+      prevProps.isPending === nextProps.isPending &&
+      prevProps.isCurrentMatch === nextProps.isCurrentMatch &&
+      prevProps.isMatch === nextProps.isMatch &&
+      prevProps.isBulkLoading === nextProps.isBulkLoading &&
+      prevProps.hasRowData === nextProps.hasRowData
+      // Note: We intentionally don't compare functions (setSelectedCell, startEdit, etc.)
+      // as they should be stable references
+    );
+  },
+);
+
+OptimizedTableCell.displayName = "OptimizedTableCell";
+
 export function createColumns({
   data,
   editing,
@@ -170,8 +283,8 @@ export function createColumns({
   filteredColumnIds,
   sortedColumnIds,
   hiddenColumnIds,
-  isBulkLoading, // ✅ ADD THIS
-  rowsWithCellData, // ✅ ADD THIS
+  isBulkLoading,
+  rowsWithCellData,
 }: {
   data: TableData | undefined;
   editing: Editing;
@@ -200,8 +313,8 @@ export function createColumns({
   filteredColumnIds?: Set<string>;
   sortedColumnIds?: Set<string>;
   hiddenColumnIds?: string[];
-  isBulkLoading?: boolean; // ✅ ADD THIS TYPE
-  rowsWithCellData?: Set<string>; // ✅ ADD THIS TYPE
+  isBulkLoading?: boolean;
+  rowsWithCellData?: Set<string>;
 }): ColumnDef<TableRow, CellValue>[] {
   if (!data) return [];
 
@@ -268,31 +381,17 @@ export function createColumns({
               onInsert={onInsert}
             />
           ),
+
           cell: (info: CellContext<TableRow, CellValue>) => {
             const value = info.getValue();
             const rowId = info.row.original.__rowId;
             const rowIndex = info.row.index;
             const colIndex = info.column.getIndex();
 
-            // ✅ ADD THIS CHECK FIRST - before any other logic
-            // Show skeleton for rows without cell data during bulk load
-            if (
-              isBulkLoading &&
-              rowsWithCellData &&
-              !rowsWithCellData.has(rowId)
-            ) {
-              return (
-                <div className="flex h-9 items-center px-2.5">
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-gray-200" />
-                </div>
-              );
-            }
-
             const isSelected =
               selectedCell?.rowIndex === rowIndex &&
               selectedCell?.colIndex === colIndex;
 
-            // ✅ Use state for isEditing check (triggers re-render when editing starts/stops)
             const isEditing =
               editing?.rowId === rowId && editing?.columnId === c.id;
 
@@ -311,47 +410,38 @@ export function createColumns({
             const isMatch =
               searchQuery && cellValueStr && cellLower.includes(searchLower);
 
-            // Check if this is the CURRENT focused match (dark amber)
+            // Check if this is the CURRENT focused match
             const isCurrentMatch =
               isMatch &&
               currentMatch?.rowId === rowId &&
               currentMatch?.columnId === c.id;
 
+            const hasRowData = rowsWithCellData?.has(rowId) ?? true;
+
+            // ✅ Use optimized memoized cell component
             return (
-              <div
-                className={cn(
-                  "relative flex h-9 w-full cursor-default items-center outline-none",
-                  isSelected && "ring-2 ring-blue-600 ring-inset",
-                  !isEditing && "hover:bg-zinc-50",
-                  // Column highlighting priority: filter (green) > sort (orange)
-                  // If filtered, use green regardless of sort state
-                  isFilteredColumn && "bg-emerald-50",
-                  // If sorted but NOT filtered, use orange
-                  isSortedColumn && !isFilteredColumn && "bg-orange-50",
-                  // Search highlighting (highest priority)
-                  isCurrentMatch && "border-l-2 border-amber-200 bg-amber-200",
-                  isMatch &&
-                    !isCurrentMatch &&
-                    "border-l-2 border-amber-100 bg-amber-100",
-                )}
-                onClick={() => setSelectedCell({ rowIndex, colIndex })}
-                onDoubleClick={() => startEdit(rowId, c.id, "append")}
-              >
-                {isEditing ? (
-                  <EditInput
-                    rowIndex={rowIndex}
-                    columnId={c.id}
-                    isNumberCol={isNumberCol}
-                    draftRef={draftRef}
-                    commitEdit={commitEdit}
-                    cancelEdit={cancelEdit}
-                  />
-                ) : (
-                  <span className="block truncate px-2.5 text-sm text-zinc-600">
-                    {String(value ?? "")}
-                  </span>
-                )}
-              </div>
+              <OptimizedTableCell
+                value={value}
+                rowId={rowId}
+                columnId={c.id}
+                rowIndex={rowIndex}
+                colIndex={colIndex}
+                isEditing={isEditing}
+                isSelected={isSelected}
+                isPending={isPending}
+                isNumberCol={isNumberCol}
+                isFilteredColumn={isFilteredColumn}
+                isSortedColumn={isSortedColumn}
+                isCurrentMatch={!!isCurrentMatch}
+                isMatch={!!isMatch}
+                isBulkLoading={isBulkLoading ?? false}
+                hasRowData={hasRowData}
+                draftRef={draftRef}
+                setSelectedCell={setSelectedCell}
+                startEdit={startEdit}
+                commitEdit={commitEdit}
+                cancelEdit={cancelEdit}
+              />
             );
           },
         };
