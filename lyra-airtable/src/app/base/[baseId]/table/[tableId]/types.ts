@@ -16,7 +16,7 @@ export type TableRow = {
 export type Editing = {
   rowId: string;
   columnId: string;
-  originalValue: string; // ← Add this
+  originalValue: string;
 } | null;
 
 export type SelectedCell = {
@@ -25,7 +25,6 @@ export type SelectedCell = {
 } | null;
 
 export type CellUpsertInput = RouterInputs["cell"]["upsertValue"];
-
 export type CellUpsertOutput = RouterOutputs["cell"]["upsertValue"];
 
 export type CellUpsertMutation = UseMutationResult<
@@ -38,7 +37,7 @@ export type CellUpsertMutation = UseMutationResult<
 export type ColumnMeta = {
   id: string;
   name: string;
-  type: string; // "TEXT" | "NUMBER"
+  type: string;
 };
 
 export type ColumnInsertPosition =
@@ -48,18 +47,16 @@ export type ColumnInsertPosition =
 
 export type AddColumnState = {
   insert: ColumnInsertPosition;
-  position: { top: number; left: number }; // Position below chevron
+  position: { top: number; left: number };
 } | null;
 
 export type FilterOperator =
-  // Text operators
   | "contains"
   | "not_contains"
   | "equals"
   | "not_equals"
   | "empty"
   | "not_empty"
-  // Number operators
   | "gt"
   | "gte"
   | "lt"
@@ -68,7 +65,7 @@ export type FilterOperator =
 export interface FilterCondition {
   id: string;
   columnId: string;
-  operator: FilterOperator; // ✅ Specific type
+  operator: FilterOperator;
   value?: string;
 }
 
@@ -76,7 +73,7 @@ export type FilterGroup = {
   id: string;
   type: "group";
   conjunction: "and" | "or";
-  conditions: Array<FilterCondition | FilterGroup>; // ✅ Recursive: can contain conditions or more groups
+  conditions: Array<FilterCondition | FilterGroup>;
 };
 
 export type FilterConfig = {
@@ -84,16 +81,12 @@ export type FilterConfig = {
   conditions: Array<FilterCondition | FilterGroup>;
 };
 
-// Helper to check if something is a group
 export function isFilterGroup(
   item: FilterCondition | FilterGroup,
 ): item is FilterGroup {
   return (item as FilterGroup).type === "group";
 }
 
-
-
-// Helper to get all column IDs that are filtered (for badges)
 export function getFilteredColumnIds(
   conditions: Array<FilterCondition | FilterGroup>,
 ): Set<string> {
@@ -101,7 +94,6 @@ export function getFilteredColumnIds(
 
   conditions.forEach((item) => {
     if (isFilterGroup(item)) {
-      // Recursively get column IDs from nested groups
       const nestedIds = getFilteredColumnIds(item.conditions);
       nestedIds.forEach((id) => columnIds.add(id));
     } else {
@@ -112,4 +104,11 @@ export function getFilteredColumnIds(
   return columnIds;
 }
 
-export type SortType = { id: string; columnId: string; direction: "asc" | "desc" };
+export type SortType = {
+  id: string;
+  columnId: string;
+  direction: "asc" | "desc";
+};
+
+// Column type enum for type safety
+export type ColumnType = "TEXT" | "NUMBER";

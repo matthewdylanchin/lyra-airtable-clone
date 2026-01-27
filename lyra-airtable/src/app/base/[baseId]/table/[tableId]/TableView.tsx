@@ -29,6 +29,8 @@ export function TableView({
   queryKey,
   onFlushPendingEdits,
   onFlushPendingColumnEdits,
+  totalCount,
+  isRowLoaded,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -57,254 +59,92 @@ export function TableView({
   };
   onFlushPendingEdits?: (tempId: string, realId: string) => void;
   onFlushPendingColumnEdits?: (tempId: string, realId: string) => void;
+  totalCount?: number;
+  isRowLoaded?: (index: number) => boolean;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
-  // ✅ Track pending temp IDs to handle rapid creation
   const pendingTempIds = useRef<Set<string>>(new Set());
 
   const replaceTempRowId = useCallback(
     (tempId: string, realId: string) => {
-      console.log(`🔄 [replaceTempRowId] ${tempId} → ${realId}`);
-
-      // Remove from pending set
       pendingTempIds.current.delete(tempId);
 
-      // Flush pending edits FIRST
       if (onFlushPendingEdits) {
         onFlushPendingEdits(tempId, realId);
       }
-
-      // Then update the cache
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            rows: page.rows.map((r) =>
-              r.id === tempId ? { ...r, id: realId } : r,
-            ),
-            cells: page.cells.map((c) =>
-              c.rowId === tempId ? { ...c, rowId: realId } : c,
-            ),
-          })),
-        };
-      });
     },
-    [onFlushPendingEdits, queryKey, utils.table.getData],
+    [onFlushPendingEdits],
   );
 
-  /* ---------- Row mutations with OPTIMISTIC UPDATES ---------- */
-
-  // ⚡ OPTIMISTIC: Append at bottom (used by "+ Add row")
-  // ✅ FIXED: Non-blocking optimistic updates for rapid row creation
+  // Row mutations
   const appendRow = api.row.create.useMutation({
-    onMutate: (variables) => {
-      // ✅ DON'T await cancel - just fire and forget to avoid blocking
-      void utils.table.getData.cancel(queryKey);
-
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
-
+    onMutate: () => {
       const tempRowId = `temp-${crypto.randomUUID()}`;
-
-      // Track this temp ID
       pendingTempIds.current.add(tempRowId);
-
-      // ✅ Calculate row count including any pending temp rows
-      const currentRowCount = previousData?.pages[0]?.totalCount ?? 0;
-      const pendingCount = pendingTempIds.current.size - 1; // -1 because we just added this one
-      const newRowIndex = currentRowCount + pendingCount;
-
-      // ✅ Synchronous cache update - no awaits
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old?.pages.length) return old;
-
-        const tempRow = {
-          id: tempRowId,
-          rowIndex: newRowIndex,
-        };
-
-        const columns = old.pages[0]?.columns ?? [];
-        const tempCells = columns.map((col) => ({
-          id: `temp-cell-${col.id}-${crypto.randomUUID()}`,
-          rowId: tempRowId,
-          columnId: col.id,
-          textValue: "",
-          numberValue: null,
-          updatedAt: new Date(),
-        }));
-
-        const updatedPages = [...old.pages];
-        const lastPageIndex = updatedPages.length - 1;
-        const lastPage = updatedPages[lastPageIndex];
-
-        if (lastPage) {
-          updatedPages[lastPageIndex] = {
-            ...lastPage,
-            rows: [...lastPage.rows, tempRow],
-            cells: [...lastPage.cells, ...tempCells],
-            totalCount: (lastPage.totalCount ?? 0) + 1,
-          };
-        }
-
-        return {
-          ...old,
-          pages: updatedPages,
-        };
-      });
-
-      return { previousData, tempRowId };
+      return { tempRowId };
     },
 
     onSuccess: (realRow, _, ctx) => {
       if (ctx?.tempRowId) {
         replaceTempRowId(ctx.tempRowId, realRow.id);
       }
+      // Invalidate to refresh the windowed data
+      void utils.table.getDataWindowed.invalidate({ tableId });
     },
 
     onError: (_err, _vars, ctx) => {
       if (ctx?.tempRowId) {
         pendingTempIds.current.delete(ctx.tempRowId);
       }
-      if (ctx?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
-      }
     },
   });
 
-  // ⚡ OPTIMISTIC: Insert above / below
   const insertRow = api.row.insertAtPosition.useMutation({
-    onMutate: (variables) => {
-      // ✅ DON'T await - fire and forget
-      void utils.table.getData.cancel(queryKey);
-
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
+    onMutate: () => {
       const tempRowId = `temp-row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
       pendingTempIds.current.add(tempRowId);
-
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old?.pages.length) return old;
-
-        const columns = old.pages[0]?.columns ?? [];
-
-        let anchorRowIndex = -1;
-        for (const page of old.pages) {
-          const row = page.rows.find((r) => r.id === variables.anchorRowId);
-          if (row) {
-            anchorRowIndex = row.rowIndex;
-            break;
-          }
-        }
-
-        const newRowIndex =
-          variables.position === "above" ? anchorRowIndex : anchorRowIndex + 1;
-
-        const tempRow = {
-          id: tempRowId,
-          rowIndex: newRowIndex,
-        };
-
-        const tempCells = columns.map((col) => ({
-          id: `temp-cell-${col.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          rowId: tempRowId,
-          columnId: col.id,
-          textValue: "",
-          numberValue: null,
-          updatedAt: new Date(),
-        }));
-
-        const updatedPages = old.pages.map((page) => {
-          const totalCount = (page.totalCount ?? 0) + 1;
-          return {
-            ...page,
-            rows: [...page.rows, tempRow],
-            cells: [...page.cells, ...tempCells],
-            totalCount,
-          };
-        });
-
-        return {
-          ...old,
-          pages: updatedPages,
-        };
-      });
-
-      return { previousData, tempRowId };
+      return { tempRowId };
     },
 
     onSuccess: async (realRow, _, ctx) => {
       if (ctx?.tempRowId && realRow?.id) {
         replaceTempRowId(ctx.tempRowId, realRow.id);
       }
-      await utils.table.getData.invalidate(queryKey);
+      await utils.table.getDataWindowed.invalidate({ tableId });
       setRowMenu(null);
     },
 
-    onError: (err, variables, context) => {
-      console.error("Failed to insert row:", err);
-      if (context?.tempRowId) {
-        pendingTempIds.current.delete(context.tempRowId);
-      }
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.tempRowId) {
+        pendingTempIds.current.delete(ctx.tempRowId);
       }
       setRowMenu(null);
     },
   });
 
-  // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
-    onMutate: (rowId) => {
-      void utils.table.getData.cancel(queryKey);
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
-
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            rows: page.rows.filter((r) => r.id !== rowId),
-            cells: page.cells.filter((c) => c.rowId !== rowId),
-            totalCount: (page.totalCount ?? 0) - 1,
-          })),
-        };
-      });
-
-      return { previousData };
-    },
-
     onSuccess: async () => {
-      await utils.table.getData.invalidate(queryKey);
+      await utils.table.getDataWindowed.invalidate({ tableId });
       setRowMenu(null);
     },
 
-    onError: (err, variables, context) => {
-      console.error("Failed to delete row:", err);
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
-      }
+    onError: () => {
       setRowMenu(null);
     },
   });
 
-  /* ---------- Right-click context menu state ---------- */
-
+  // Context menu
   const [rowMenu, setRowMenu] = useState<RowContextMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-
   const [openDirection, setOpenDirection] = useState<"up" | "down">("down");
 
   useEffect(() => {
     if (!rowMenu) return;
 
-    const menuHeight = 300; // Estimate or measure actual menu height
-    const buffer = 16; // Optional margin from edge
+    const menuHeight = 300;
+    const buffer = 16;
     const spaceBelow = window.innerHeight - rowMenu.y;
 
     if (spaceBelow < menuHeight + buffer) {
@@ -335,8 +175,6 @@ export function TableView({
     };
   }, [rowMenu]);
 
-  /* ---------- Handlers ---------- */
-
   const handleInsert = (position: "above" | "below") => {
     if (!rowMenu) return;
     void insertRow.mutate({
@@ -351,7 +189,6 @@ export function TableView({
     void deleteRow.mutate(rowMenu.rowId);
   };
 
-  // ✅ Allow rapid clicking - don't check isPending
   const handleAddRow = useCallback(() => {
     void appendRow.mutate({ tableId });
   }, [appendRow, tableId]);
@@ -360,12 +197,10 @@ export function TableView({
   const headerGroups = table.getHeaderGroups();
   const visibleColumns = table.getVisibleLeafColumns();
 
-  /* ---------- Refs for scrolling ---------- */
   const headerRef = useRef<HTMLTableSectionElement | null>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const cellRefs = useRef<Map<string, HTMLTableCellElement>>(new Map());
 
-  /* ---------- Get virtual items ---------- */
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
@@ -375,10 +210,11 @@ export function TableView({
       ? totalSize - virtualRows[virtualRows.length - 1]!.end
       : 0;
 
-  /* ---------- Vertical scrolling ---------- */
+  // Vertical scrolling
   useEffect(() => {
     if (focusedRowIndex == null) return;
-    if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
+    if (focusedRowIndex < 0 || focusedRowIndex >= (totalCount ?? rows.length))
+      return;
 
     const container = tableContainerRef.current;
     const header = headerRef.current;
@@ -413,12 +249,19 @@ export function TableView({
     }
 
     container.scrollTop = newScrollTop;
-  }, [focusedRowIndex, rows.length, rowVirtualizer, tableContainerRef]);
+  }, [
+    focusedRowIndex,
+    totalCount,
+    rows.length,
+    rowVirtualizer,
+    tableContainerRef,
+  ]);
 
-  /* ---------- Horizontal scrolling ---------- */
+  // Horizontal scrolling
   useEffect(() => {
     if (focusedRowIndex == null || focusedColumnIndex == null) return;
-    if (focusedRowIndex < 0 || focusedRowIndex >= rows.length) return;
+    if (focusedRowIndex < 0 || focusedRowIndex >= (totalCount ?? rows.length))
+      return;
     if (focusedColumnIndex < 0 || focusedColumnIndex >= visibleColumns.length)
       return;
 
@@ -454,12 +297,11 @@ export function TableView({
   }, [
     focusedRowIndex,
     focusedColumnIndex,
+    totalCount,
     rows.length,
     visibleColumns.length,
     tableContainerRef,
   ]);
-
-  /* ---------- Render ---------- */
 
   const tableWidth = visibleColumns.reduce(
     (sum, col) => sum + col.getSize(),
@@ -543,13 +385,17 @@ export function TableView({
 
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
-              const isSkeletonRow = virtualRow.index >= rows.length;
+              const isLoaded = isRowLoaded
+                ? isRowLoaded(virtualRow.index)
+                : !!row;
 
-              if (!row) {
+              // Show skeleton for unloaded rows
+              if (!row || !isLoaded) {
                 return (
                   <tr
                     key={`skeleton-${virtualRow.index}`}
                     className="animate-pulse"
+                    style={{ height: 35 }}
                   >
                     {visibleColumns.map((col) => (
                       <td
@@ -562,10 +408,10 @@ export function TableView({
                           padding: "8px 12px",
                         }}
                       >
-                        <div className="h-4 rounded bg-gray-200"></div>
+                        <div className="h-4 rounded bg-gray-200" />
                       </td>
                     ))}
-                    <td className="w-12 max-w-12 min-w-12 px-3 py-2"></td>
+                    <td className="w-12 max-w-12 min-w-12 px-3 py-2" />
                   </tr>
                 );
               }
@@ -584,6 +430,7 @@ export function TableView({
                     }
                   }}
                   className="transition-colors hover:bg-gray-50"
+                  style={{ height: 35 }}
                 >
                   {row.getVisibleCells().map((cell, cellIndex) => {
                     const width = cell.column.getSize();
@@ -608,12 +455,14 @@ export function TableView({
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          setRowMenu({
-                            rowId,
-                            rowIndex: row.index,
-                            x: e.clientX,
-                            y: e.clientY,
-                          });
+                          if (!rowId.startsWith("placeholder-")) {
+                            setRowMenu({
+                              rowId,
+                              rowIndex: row.index,
+                              x: e.clientX,
+                              y: e.clientY,
+                            });
+                          }
                         }}
                       >
                         {flexRender(
@@ -623,7 +472,7 @@ export function TableView({
                       </td>
                     );
                   })}
-                  <td className="w-12 max-w-12 min-w-12 px-3 py-2"></td>
+                  <td className="w-12 max-w-12 min-w-12 px-3 py-2" />
                 </tr>
               );
             })}
@@ -634,37 +483,7 @@ export function TableView({
               </tr>
             )}
 
-            {isFetchingNextPage && (
-              <tr>
-                <td
-                  colSpan={visibleColumns.length + 1}
-                  className="py-2 text-center"
-                >
-                  <div className="inline-flex items-center gap-2 text-xs text-gray-400">
-                    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24">
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Loading...
-                  </div>
-                </td>
-              </tr>
-            )}
-
-            {/* Add Row - styled like a regular row with + in first column */}
-            {/* ✅ FIXED: Removed isPending check to allow rapid clicking */}
+            {/* Add Row button */}
             <tr
               className="group cursor-pointer hover:bg-gray-50"
               onClick={handleAddRow}
@@ -706,12 +525,13 @@ export function TableView({
                   </td>
                 );
               })}
-              <td className="w-12 max-w-12 min-w-12 border-b border-gray-200"></td>
+              <td className="w-12 max-w-12 min-w-12 border-b border-gray-200" />
             </tr>
           </tbody>
         </table>
       </div>
 
+      {/* Context menu - same as before */}
       {rowMenu && (
         <div
           ref={menuRef}
@@ -803,108 +623,6 @@ export function TableView({
               />
             </svg>
             <span>Duplicate record</span>
-          </button>
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-              />
-            </svg>
-            <span>Apply template</span>
-          </button>
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-              />
-            </svg>
-            <span>Expand record</span>
-          </button>
-
-          <div className="my-2 border-t border-gray-200" />
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
-            <span>Add comment</span>
-          </button>
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-              />
-            </svg>
-            <span>Copy cell URL</span>
-          </button>
-
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <svg
-              className="h-4 w-4 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-              />
-            </svg>
-            <span>Send record</span>
           </button>
 
           <div className="my-2 border-t border-gray-200" />

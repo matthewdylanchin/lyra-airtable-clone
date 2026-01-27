@@ -7,12 +7,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ColumnSizingState } from "@tanstack/react-table";
 import { api } from "@/trpc/react";
 import SortPanel from "./Components/SortPanel";
-import { useTableData } from "./hooks/useTableData";
-import {
-  useTableEditing,
-  type PendingEditsMap,
-  type PendingEdit,
-} from "./hooks/useTableEditing";
+import { useTableEditing, type PendingEditsMap } from "./hooks/useTableEditing";
 import { useKeyboardNavigation } from "./hooks/useKeyboardNavigation";
 import { useTableView } from "./TableViewContext";
 import { createColumns } from "./columns";
@@ -23,46 +18,12 @@ import type {
   ColumnInsertPosition,
   AddColumnState,
   FilterCondition,
+  TableRow,
 } from "./types";
 import FilterPanel from "./Components/FilterPanel";
 import BottomBar from "@/app/_components/shell/BottomBar";
 import type { SortType } from "./types";
-
-function getRowsWithCellData(data: TableDataType | undefined): Set<string> {
-  if (!data) return new Set();
-
-  const rowsWithData = new Set<string>();
-
-  // A row has data if it has at least one cell
-  data.cells.forEach((cell) => {
-    rowsWithData.add(cell.rowId);
-  });
-
-  return rowsWithData;
-}
-
-type ColumnType = {
-  id: string;
-  name: string;
-  type: "TEXT" | "NUMBER";
-  order: number;
-};
-
-type TableDataType = {
-  table: { id: string; name: string; baseId: string };
-  columns: ColumnType[];
-  rows: Array<{ id: string; rowIndex: number }>;
-  cells: Array<{
-    id: string;
-    rowId: string;
-    columnId: string;
-    textValue: string | null;
-    numberValue: number | null;
-    updatedAt: Date;
-  }>;
-  totalCount: number;
-  nextCursor: number | undefined;
-};
+import { useWindowedData } from "./hooks/useWindowedData";
 
 export default function TableClient() {
   const params = useParams<{ tableId: string }>();
@@ -119,16 +80,40 @@ export default function TableClient() {
   const [pendingUpdates, setPendingUpdates] = useState<Record<string, string>>(
     {},
   );
-
-  // ✅ NEW: Ref to store pending edits for temp rows
   const pendingEditsRef = useRef<PendingEditsMap>(new Map());
 
   const utils = api.useUtils();
 
+  // Use windowed data hook
+  const {
+    table: tableInfo,
+    columns,
+    totalCount,
+    getRowAtIndex,
+    getCellValue,
+    isRowLoaded,
+    loadRange,
+    isInitialLoading,
+    isLoadingRange,
+    error,
+    invalidateCache,
+    cellByKey,
+    data,
+  } = useWindowedData({
+    tableId,
+    windowSize: 1000,
+    overscan: 200,
+    searchQuery: searchQuery || undefined,
+    filters: filters.length > 0 ? filters : undefined,
+    filterConjunction,
+    sorts: sorts.length > 0 ? sorts : undefined,
+  });
+
+  // Build query key for mutations
   const queryKey = useMemo(
     () => ({
       tableId,
-      limit: 5000,
+      limit: 100,
       searchQuery: searchQuery || undefined,
       filterConjunction,
       filters:
@@ -159,82 +144,21 @@ export default function TableClient() {
     setDataQueryKey(queryKey);
   }, [queryKey, setDataQueryKey]);
 
-  const {
-    data: infiniteData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isFetching,
-    isLoading,
-    error,
-    refetch,
-  } = api.table.getData.useInfiniteQuery(queryKey, {
-    enabled: !!tableId,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    staleTime: isBulkLoading ? 0 : 5 * 60 * 1000, // ✅ Force refetch during bulk load
-    gcTime: 10 * 60 * 1000,
-    placeholderData: (previousData) => previousData,
-    refetchInterval: isBulkLoading ? 2000 : false, // ✅ Auto-refetch every 2s during bulk load
-  });
-
-  const data = useMemo((): TableDataType | undefined => {
-    if (!infiniteData?.pages) return undefined;
-
-    const firstPage = infiniteData.pages[0];
-    if (!firstPage) return undefined;
-
-    const combinedRows = infiniteData.pages.flatMap((page) => page.rows);
-    const combinedCells = infiniteData.pages.flatMap((page) => page.cells);
-
-    return {
-      table: firstPage.table,
-      columns: firstPage.columns as ColumnType[],
-      rows: combinedRows,
-      cells: combinedCells,
-      totalCount: firstPage.totalCount,
-      nextCursor: undefined,
-    };
-  }, [infiniteData]);
-
+  // Cell upsert mutation
   const upsert = api.cell.upsertValue.useMutation({
     onMutate: async (variables) => {
-      // ✅ UPDATED: Skip backend for temp IDs (let the queue handle it)
       if (
         variables.rowId.startsWith("temp-") ||
         variables.columnId.startsWith("temp-")
       ) {
-        return; // Don't do anything for temp rows
+        return;
       }
 
-      await utils.table.getData.cancel(queryKey);
-
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
-
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old) return old;
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            cells: page.cells.map((cell) => {
-              if (
-                cell.rowId === variables.rowId &&
-                cell.columnId === variables.columnId
-              ) {
-                return {
-                  ...cell,
-                  textValue: variables.textValue,
-                  numberValue: variables.numberValue,
-                };
-              }
-              return cell;
-            }),
-          })),
-        };
-      });
-
-      return { previousData };
+      setPendingUpdates((prev) => ({
+        ...prev,
+        [`${variables.rowId}:${variables.columnId}`]:
+          variables.textValue ?? String(variables.numberValue ?? ""),
+      }));
     },
 
     onSuccess: (_data, variables) => {
@@ -245,11 +169,7 @@ export default function TableClient() {
       });
     },
 
-    onError: (_err, variables, context) => {
-      if (context?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, context.previousData);
-      }
-
+    onError: (_err, variables) => {
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -259,28 +179,51 @@ export default function TableClient() {
   });
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
-  const { cellByKey, tableData } = useTableData(data);
 
-  const tableDataWithPending = useMemo(() => {
-    if (Object.keys(pendingUpdates).length === 0) return tableData;
+  // Build table data from windowed cache
+  const tableData = useMemo((): TableRow[] => {
+    const rows: TableRow[] = [];
+    const rowCount = optimisticRowCount ?? totalCount;
 
-    return tableData.map((row) => {
-      const rowId = row.__rowId;
-      const updatedRow = { ...row };
+    for (let i = 0; i < rowCount; i++) {
+      const row = getRowAtIndex(i);
 
-      Object.entries(pendingUpdates).forEach(([key, value]) => {
-        const parts = key.split(":");
-        const updateRowId = parts[0];
-        const columnId = parts[1];
+      if (row) {
+        const rowData: TableRow = { __rowId: row.id };
 
-        if (updateRowId === rowId && columnId) {
-          updatedRow[columnId] = value;
-        }
-      });
+        columns.forEach((col) => {
+          const cell = getCellValue(row.id, col.id);
+          const pendingKey = `${row.id}:${col.id}`;
 
-      return updatedRow;
-    });
-  }, [tableData, pendingUpdates]);
+          if (pendingUpdates[pendingKey] !== undefined) {
+            rowData[col.id] = pendingUpdates[pendingKey];
+          } else if (cell) {
+            rowData[col.id] = cell.textValue ?? cell.numberValue ?? null;
+          } else {
+            rowData[col.id] = null;
+          }
+        });
+
+        rows.push(rowData);
+      } else {
+        // Placeholder for unloaded row
+        const placeholderRow: TableRow = { __rowId: `placeholder-${i}` };
+        columns.forEach((col) => {
+          placeholderRow[col.id] = null;
+        });
+        rows.push(placeholderRow);
+      }
+    }
+
+    return rows;
+  }, [
+    totalCount,
+    optimisticRowCount,
+    getRowAtIndex,
+    getCellValue,
+    columns,
+    pendingUpdates,
+  ]);
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -288,7 +231,6 @@ export default function TableClient() {
 
   const {
     editing,
-    draft,
     localError,
     startEdit,
     cancelEdit,
@@ -296,7 +238,6 @@ export default function TableClient() {
     setDraft,
     updateEditingRowId,
     updateEditingColumnId,
-    editingRef,
     draftRef,
   } = useTableEditing({
     data,
@@ -311,26 +252,15 @@ export default function TableClient() {
     },
   });
 
-  // ✅ NEW: Function to flush pending edits when temp ID is replaced with real ID
   const flushPendingEdits = useCallback(
     (tempId: string, realId: string, type: "row" | "column" = "row") => {
       if (type === "row") {
-        // Existing row logic
         updateEditingRowId(tempId, realId);
 
         const pendingEdits = pendingEditsRef.current.get(tempId);
 
         if (pendingEdits && pendingEdits.length > 0) {
-          console.log(
-            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} row edits for ${tempId} → ${realId}`,
-          );
-
           pendingEdits.forEach((edit) => {
-            console.log(`  📤 Sending edit:`, {
-              realId,
-              columnId: edit.columnId,
-            });
-
             upsert.mutate({
               rowId: realId,
               columnId: edit.columnId,
@@ -342,7 +272,6 @@ export default function TableClient() {
           pendingEditsRef.current.delete(tempId);
         }
 
-        // Update pendingUpdates keys from temp to real
         setPendingUpdates((prev) => {
           const next: Record<string, string> = {};
 
@@ -358,25 +287,15 @@ export default function TableClient() {
           return next;
         });
       } else {
-        // ✅ Column logic
         updateEditingColumnId(tempId, realId);
 
         const queueKey = `col:${tempId}`;
         const pendingEdits = pendingEditsRef.current.get(queueKey);
 
         if (pendingEdits && pendingEdits.length > 0) {
-          console.log(
-            `🚀 [flushPendingEdits] Flushing ${pendingEdits.length} column edits for ${tempId} → ${realId}`,
-          );
-
           pendingEdits.forEach((edit) => {
             const rowId = edit.rowId;
             if (!rowId) return;
-
-            console.log(`  📤 Sending edit:`, {
-              rowId,
-              columnId: realId,
-            });
 
             upsert.mutate({
               rowId,
@@ -389,7 +308,6 @@ export default function TableClient() {
           pendingEditsRef.current.delete(queueKey);
         }
 
-        // Update pendingUpdates keys from temp column to real
         setPendingUpdates((prev) => {
           const next: Record<string, string> = {};
 
@@ -416,10 +334,11 @@ export default function TableClient() {
     [flushPendingEdits],
   );
 
+  // Search match tracking
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const matchingCells = useMemo(() => {
-    if (!searchQuery || !data) return [];
+    if (!searchQuery || columns.length === 0) return [];
 
     const matches: Array<{
       rowId: string;
@@ -428,15 +347,16 @@ export default function TableClient() {
       colIndex: number;
     }> = [];
 
-    data.rows.forEach((row, rowIndex) => {
-      data.columns.forEach((col, colIndex) => {
-        const cellKey = `${row.id}:${col.id}`;
-        const cell = cellByKey.get(cellKey);
-        const value = cell?.textValue ?? "";
+    tableData.forEach((row, rowIndex) => {
+      if (row.__rowId.startsWith("placeholder-")) return;
 
-        if (value?.toLowerCase().includes(searchQuery.toLowerCase())) {
+      columns.forEach((col, colIndex) => {
+        const value = row[col.id];
+        const valueStr = value != null ? String(value) : "";
+
+        if (valueStr.toLowerCase().includes(searchQuery.toLowerCase())) {
           matches.push({
-            rowId: row.id,
+            rowId: row.__rowId,
             columnId: col.id,
             rowIndex,
             colIndex: colIndex + 1,
@@ -446,7 +366,7 @@ export default function TableClient() {
     });
 
     return matches;
-  }, [searchQuery, data, cellByKey]);
+  }, [searchQuery, tableData, columns]);
 
   useEffect(() => {
     setCurrentMatchIndex(0);
@@ -483,11 +403,32 @@ export default function TableClient() {
     return new Set(sorts.map((s) => s.columnId));
   }, [sorts]);
 
+  // Rows with cell data for skeleton detection
   const rowsWithCellData = useMemo(() => {
-    return getRowsWithCellData(data);
-  }, [data]);
+    const set = new Set<string>();
 
-  const columns = useMemo(
+    for (let i = 0; i < totalCount; i++) {
+      if (isRowLoaded(i)) {
+        const row = getRowAtIndex(i);
+        if (row) {
+          set.add(row.id);
+        }
+      }
+    }
+
+    return set;
+  }, [totalCount, getRowAtIndex, isRowLoaded]);
+
+  // Cast columns to the expected type for createColumns
+  const typedColumns = columns as Array<{
+    id: string;
+    name: string;
+    type: "TEXT" | "NUMBER";
+    order: number;
+  }>;
+
+  // Create columns definition
+  const tableColumns = useMemo(
     () =>
       createColumns({
         data,
@@ -510,8 +451,8 @@ export default function TableClient() {
         filteredColumnIds,
         sortedColumnIds,
         hiddenColumnIds,
-        isBulkLoading, // ✅ ADD THIS
-        rowsWithCellData, // ✅ ADD THIS
+        isBulkLoading,
+        rowsWithCellData,
       }),
     [
       data,
@@ -519,21 +460,20 @@ export default function TableClient() {
       selectedCell,
       startEdit,
       cancelEdit,
-      setDraft,
       upsert,
       searchQuery,
       currentMatch,
       filteredColumnIds,
       sortedColumnIds,
       hiddenColumnIds,
-      isBulkLoading, // ✅ ADD THIS
-      rowsWithCellData, // ✅ ADD THIS
+      isBulkLoading,
+      rowsWithCellData,
     ],
   );
 
   const table = useReactTable({
-    data: tableDataWithPending,
-    columns,
+    data: tableData,
+    columns: tableColumns,
     getCoreRowModel: getCoreRowModel(),
     enableColumnResizing: true,
     columnResizeMode: "onChange",
@@ -549,24 +489,25 @@ export default function TableClient() {
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  // ✅ UPDATED: Use totalCount during bulk loading (to show skeletons), otherwise use actual rows length
-  const totalRows = data?.totalCount ?? data?.rows.length ?? 0;
-
+  // Virtualizer uses TOTAL count for proper scrollbar
   const rowVirtualizer = useVirtualizer({
-    count: totalRows,
+    count: optimisticRowCount ?? totalCount,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
-    overscan: 150,
+    overscan: 20,
   });
 
-  const timeoutIds = useRef<NodeJS.Timeout[]>([]);
-
+  // Load data as user scrolls - THIS IS THE INFINITE SCROLL PART
   useEffect(() => {
-    return () => {
-      timeoutIds.current.forEach((id) => clearTimeout(id));
-      timeoutIds.current = [];
-    };
-  }, []);
+    const virtualItems = rowVirtualizer.getVirtualItems();
+    if (virtualItems.length === 0) return;
+
+    const startIndex = virtualItems[0]?.index ?? 0;
+    const endIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
+
+    // Load the visible range plus overscan
+    void loadRange(startIndex, endIndex + 1);
+  }, [rowVirtualizer.getVirtualItems(), loadRange]);
 
   useKeyboardNavigation({
     table,
@@ -577,41 +518,22 @@ export default function TableClient() {
     setDraft,
   });
 
-  const isBusy =
-    isLoading || isFetchingNextPage || upsert.isPending || isFetching;
+  const isBusy = isInitialLoading || upsert.isPending;
 
   useEffect(() => {
     setIsBusy(isBusy);
   }, [isBusy, setIsBusy]);
 
+  // Clear optimistic row count when data loads
   useEffect(() => {
-    const items = rowVirtualizer.getVirtualItems();
-    if (!items.length || !data) return;
+    if (!optimisticRowCount) return;
 
-    const lastItem = items[items.length - 1];
-    if (!lastItem) return;
-
-    const loaded = data.rows.length;
-
-    if (lastItem.index >= loaded - 50 && hasNextPage && !isFetchingNextPage) {
-      void fetchNextPage();
-    }
-  }, [
-    rowVirtualizer.getVirtualItems(),
-    data?.rows.length,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  ]);
-
-  useEffect(() => {
-    if (!optimisticRowCount || !data) return;
-
-    if (data.rows.length >= optimisticRowCount) {
+    if (totalCount >= optimisticRowCount) {
       setOptimisticRowCount(null);
     }
-  }, [data?.rows.length, optimisticRowCount]);
+  }, [totalCount, optimisticRowCount, setOptimisticRowCount]);
 
+  // Keyboard shortcut for search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -624,7 +546,7 @@ export default function TableClient() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setSearchBarOpen]);
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-sm text-gray-600">Loading…</div>
@@ -640,13 +562,20 @@ export default function TableClient() {
     );
   }
 
-  if (!data) {
+  if (!tableInfo) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-sm text-gray-600">No data</div>
       </div>
     );
   }
+
+  // Cast columns for FilterPanel and SortPanel
+  const columnsForPanels = typedColumns as Array<{
+    id: string;
+    name: string;
+    type: "TEXT" | "NUMBER";
+  }>;
 
   return (
     <div className="flex h-full flex-col">
@@ -675,7 +604,7 @@ export default function TableClient() {
       <FilterPanel
         isOpen={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
-        columns={data?.columns ?? []}
+        columns={columnsForPanels}
         filters={filters}
         onChange={setFilters}
         triggerRef={filterButtonRef ?? undefined}
@@ -686,7 +615,7 @@ export default function TableClient() {
       <SortPanel
         isOpen={sortPanelOpen}
         onClose={() => setSortPanelOpen(false)}
-        columns={data?.columns ?? []}
+        columns={columnsForPanels}
         sorts={sorts}
         onChange={setSorts}
         triggerRef={sortButtonRef ?? undefined}
@@ -701,14 +630,21 @@ export default function TableClient() {
           focusedColumnIndex={selectedCell?.colIndex ?? null}
           rowVirtualizer={rowVirtualizer}
           tableContainerRef={tableContainerRef}
-          isFetchingNextPage={isFetchingNextPage}
+          isFetchingNextPage={isLoadingRange(
+            rowVirtualizer.getVirtualItems()[0]?.index ?? 0,
+            (rowVirtualizer.getVirtualItems()[
+              rowVirtualizer.getVirtualItems().length - 1
+            ]?.index ?? 0) + 1,
+          )}
           onOpenSearch={() => setSearchBarOpen(true)}
           queryKey={queryKey}
           onFlushPendingEdits={flushPendingEdits}
           onFlushPendingColumnEdits={flushPendingColumnEdits}
+          totalCount={totalCount}
+          isRowLoaded={isRowLoaded}
         />
       </div>
-      <BottomBar rowCount={optimisticRowCount ?? data.totalCount} />
+      <BottomBar rowCount={optimisticRowCount ?? totalCount} />
     </div>
   );
 }
