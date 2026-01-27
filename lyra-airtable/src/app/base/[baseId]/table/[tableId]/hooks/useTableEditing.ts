@@ -139,7 +139,7 @@ export function useTableEditing({
       onCommit(rowId, columnId, currentDraft);
     }
 
-    // ✅ 3. Clear editing state IMMEDIATELY (no transitions!)
+    // ✅ 3. Clear editing state IMMEDIATELY (synchronous)
     editingRef.current = null;
     draftRef.current = "";
     setEditing(null);
@@ -178,25 +178,28 @@ export function useTableEditing({
       return;
     }
 
-    // ✅ 4. Fire mutation (async, doesn't block)
-    upsert.mutate(
-      { rowId, columnId, textValue, numberValue },
-      {
-        onSuccess: () => {
-          if (clearPendingCellEdit) {
-            clearPendingCellEdit(rowId, columnId, { textValue, numberValue });
-          }
+    // ✅ 4. Schedule mutation for next tick (truly non-blocking)
+    // This ensures the mutation doesn't block the tab keypress at all
+    setTimeout(() => {
+      upsert.mutate(
+        { rowId, columnId, textValue, numberValue },
+        {
+          onSuccess: () => {
+            if (clearPendingCellEdit) {
+              clearPendingCellEdit(rowId, columnId, { textValue, numberValue });
+            }
+          },
+          onError: (error) => {
+            if (clearPendingCellEdit) {
+              clearPendingCellEdit(rowId, columnId);
+            }
+            setLocalError(
+              error instanceof Error ? error.message : "Failed to save",
+            );
+          },
         },
-        onError: (error) => {
-          if (clearPendingCellEdit) {
-            clearPendingCellEdit(rowId, columnId);
-          }
-          setLocalError(
-            error instanceof Error ? error.message : "Failed to save",
-          );
-        },
-      },
-    );
+      );
+    }, 0);
   }, [
     data?.columns,
     onCommit,

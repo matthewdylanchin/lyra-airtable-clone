@@ -275,6 +275,7 @@ export default function TableClient() {
     updateEditingRowId,
     updateEditingColumnId,
     draftRef,
+    editingRef,
   } = useTableEditing({
     data,
     cellByKey,
@@ -559,10 +560,11 @@ export default function TableClient() {
     selectedCell,
     setSelectedCell,
     editing,
+    editingRef, // ✅ Pass editingRef
     startEdit,
     setDraft,
+    commitEdit, // ✅ Pass commitEdit
   });
-
   const isBusy = isInitialLoading || upsert.isPending;
 
   useEffect(() => {
