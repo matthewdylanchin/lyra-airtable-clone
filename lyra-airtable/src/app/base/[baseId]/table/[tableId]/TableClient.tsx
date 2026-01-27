@@ -50,9 +50,6 @@ export default function TableClient() {
     setSorts,
     setIsBusy,
     isBulkLoading,
-    setIsBulkLoading,
-    optimisticRowCount,
-    setOptimisticRowCount,
   } = useTableView();
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
@@ -82,8 +79,6 @@ export default function TableClient() {
   );
   const pendingEditsRef = useRef<PendingEditsMap>(new Map());
 
-  const utils = api.useUtils();
-
   // Use windowed data hook
   const {
     table: tableInfo,
@@ -99,10 +94,15 @@ export default function TableClient() {
     invalidateCache,
     cellByKey,
     data,
+    addOptimisticRow,
+    insertOptimisticRow,
+    removeOptimisticRow,
+    replaceOptimisticRowId,
+    deleteRowOptimistically,
   } = useWindowedData({
     tableId,
-    windowSize: 1000,
-    overscan: 200,
+    windowSize: 500,
+    overscan: 100,
     searchQuery: searchQuery || undefined,
     filters: filters.length > 0 ? filters : undefined,
     filterConjunction,
@@ -113,7 +113,7 @@ export default function TableClient() {
   const queryKey = useMemo(
     () => ({
       tableId,
-      limit: 100,
+      limit: 500,
       searchQuery: searchQuery || undefined,
       filterConjunction,
       filters:
@@ -183,9 +183,8 @@ export default function TableClient() {
   // Build table data from windowed cache
   const tableData = useMemo((): TableRow[] => {
     const rows: TableRow[] = [];
-    const rowCount = optimisticRowCount ?? totalCount;
 
-    for (let i = 0; i < rowCount; i++) {
+    for (let i = 0; i < totalCount; i++) {
       const row = getRowAtIndex(i);
 
       if (row) {
@@ -216,14 +215,7 @@ export default function TableClient() {
     }
 
     return rows;
-  }, [
-    totalCount,
-    optimisticRowCount,
-    getRowAtIndex,
-    getCellValue,
-    columns,
-    pendingUpdates,
-  ]);
+  }, [totalCount, getRowAtIndex, getCellValue, columns, pendingUpdates]);
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -256,6 +248,9 @@ export default function TableClient() {
     (tempId: string, realId: string, type: "row" | "column" = "row") => {
       if (type === "row") {
         updateEditingRowId(tempId, realId);
+
+        // Replace optimistic row with real ID in windowed data
+        replaceOptimisticRowId(tempId, realId);
 
         const pendingEdits = pendingEditsRef.current.get(tempId);
 
@@ -324,7 +319,7 @@ export default function TableClient() {
         });
       }
     },
-    [upsert, updateEditingRowId, updateEditingColumnId],
+    [upsert, updateEditingRowId, updateEditingColumnId, replaceOptimisticRowId],
   );
 
   const flushPendingColumnEdits = useCallback(
@@ -403,7 +398,6 @@ export default function TableClient() {
     return new Set(sorts.map((s) => s.columnId));
   }, [sorts]);
 
-  // Rows with cell data for skeleton detection
   const rowsWithCellData = useMemo(() => {
     const set = new Set<string>();
 
@@ -419,7 +413,6 @@ export default function TableClient() {
     return set;
   }, [totalCount, getRowAtIndex, isRowLoaded]);
 
-  // Cast columns to the expected type for createColumns
   const typedColumns = columns as Array<{
     id: string;
     name: string;
@@ -427,7 +420,6 @@ export default function TableClient() {
     order: number;
   }>;
 
-  // Create columns definition
   const tableColumns = useMemo(
     () =>
       createColumns({
@@ -489,15 +481,14 @@ export default function TableClient() {
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  // Virtualizer uses TOTAL count for proper scrollbar
   const rowVirtualizer = useVirtualizer({
-    count: optimisticRowCount ?? totalCount,
+    count: totalCount,
     getScrollElement: () => tableContainerRef.current,
     estimateSize: () => 35,
     overscan: 20,
   });
 
-  // Load data as user scrolls - THIS IS THE INFINITE SCROLL PART
+  // Load data as user scrolls
   useEffect(() => {
     const virtualItems = rowVirtualizer.getVirtualItems();
     if (virtualItems.length === 0) return;
@@ -505,7 +496,6 @@ export default function TableClient() {
     const startIndex = virtualItems[0]?.index ?? 0;
     const endIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
 
-    // Load the visible range plus overscan
     void loadRange(startIndex, endIndex + 1);
   }, [rowVirtualizer.getVirtualItems(), loadRange]);
 
@@ -524,16 +514,6 @@ export default function TableClient() {
     setIsBusy(isBusy);
   }, [isBusy, setIsBusy]);
 
-  // Clear optimistic row count when data loads
-  useEffect(() => {
-    if (!optimisticRowCount) return;
-
-    if (totalCount >= optimisticRowCount) {
-      setOptimisticRowCount(null);
-    }
-  }, [totalCount, optimisticRowCount, setOptimisticRowCount]);
-
-  // Keyboard shortcut for search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -570,7 +550,6 @@ export default function TableClient() {
     );
   }
 
-  // Cast columns for FilterPanel and SortPanel
   const columnsForPanels = typedColumns as Array<{
     id: string;
     name: string;
@@ -642,9 +621,14 @@ export default function TableClient() {
           onFlushPendingColumnEdits={flushPendingColumnEdits}
           totalCount={totalCount}
           isRowLoaded={isRowLoaded}
+          // Pass optimistic row functions
+          addOptimisticRow={addOptimisticRow}
+          insertOptimisticRow={insertOptimisticRow}
+          removeOptimisticRow={removeOptimisticRow}
+          deleteRowOptimistically={deleteRowOptimistically}
         />
       </div>
-      <BottomBar rowCount={optimisticRowCount ?? totalCount} />
+      <BottomBar rowCount={totalCount} />
     </div>
   );
 }

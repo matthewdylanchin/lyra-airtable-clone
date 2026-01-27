@@ -31,6 +31,11 @@ export function TableView({
   onFlushPendingColumnEdits,
   totalCount,
   isRowLoaded,
+  // Optimistic row functions
+  addOptimisticRow,
+  insertOptimisticRow,
+  removeOptimisticRow,
+  deleteRowOptimistically,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -61,57 +66,88 @@ export function TableView({
   onFlushPendingColumnEdits?: (tempId: string, realId: string) => void;
   totalCount?: number;
   isRowLoaded?: (index: number) => boolean;
+  // Optimistic row functions
+  addOptimisticRow?: (tempId: string) => void;
+  insertOptimisticRow?: (tempId: string, atIndex: number) => void;
+  removeOptimisticRow?: (tempId: string) => void;
+  deleteRowOptimistically?: (rowId: string) => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
 
+  // Track pending temp IDs
   const pendingTempIds = useRef<Set<string>>(new Set());
 
-  const replaceTempRowId = useCallback(
-    (tempId: string, realId: string) => {
-      pendingTempIds.current.delete(tempId);
-
-      if (onFlushPendingEdits) {
-        onFlushPendingEdits(tempId, realId);
-      }
-    },
-    [onFlushPendingEdits],
-  );
-
-  // Row mutations
+  // ⚡ OPTIMISTIC: Append row at bottom
   const appendRow = api.row.create.useMutation({
     onMutate: () => {
       const tempRowId = `temp-${crypto.randomUUID()}`;
       pendingTempIds.current.add(tempRowId);
+
+      // Add optimistic row to windowed data
+      if (addOptimisticRow) {
+        addOptimisticRow(tempRowId);
+      }
+
       return { tempRowId };
     },
 
     onSuccess: (realRow, _, ctx) => {
       if (ctx?.tempRowId) {
-        replaceTempRowId(ctx.tempRowId, realRow.id);
+        pendingTempIds.current.delete(ctx.tempRowId);
+
+        // Flush pending edits (this will also replace the temp ID)
+        if (onFlushPendingEdits) {
+          onFlushPendingEdits(ctx.tempRowId, realRow.id);
+        }
       }
-      // Invalidate to refresh the windowed data
-      void utils.table.getDataWindowed.invalidate({ tableId });
     },
 
     onError: (_err, _vars, ctx) => {
       if (ctx?.tempRowId) {
         pendingTempIds.current.delete(ctx.tempRowId);
+
+        // Remove optimistic row
+        if (removeOptimisticRow) {
+          removeOptimisticRow(ctx.tempRowId);
+        }
       }
     },
   });
 
+  // ⚡ OPTIMISTIC: Insert row above/below
   const insertRow = api.row.insertAtPosition.useMutation({
-    onMutate: () => {
+    onMutate: (variables) => {
       const tempRowId = `temp-row-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       pendingTempIds.current.add(tempRowId);
+
+      // Find the anchor row index
+      const rows = table.getRowModel().rows;
+      const anchorRow = rows.find(
+        (r) => r.original.__rowId === variables.anchorRowId,
+      );
+      const anchorIndex = anchorRow?.index ?? 0;
+      const newIndex =
+        variables.position === "above" ? anchorIndex : anchorIndex + 1;
+
+      // Add optimistic row at position
+      if (insertOptimisticRow) {
+        insertOptimisticRow(tempRowId, newIndex);
+      }
+
       return { tempRowId };
     },
 
     onSuccess: async (realRow, _, ctx) => {
       if (ctx?.tempRowId && realRow?.id) {
-        replaceTempRowId(ctx.tempRowId, realRow.id);
+        pendingTempIds.current.delete(ctx.tempRowId);
+
+        if (onFlushPendingEdits) {
+          onFlushPendingEdits(ctx.tempRowId, realRow.id);
+        }
       }
+
+      // Invalidate to get proper ordering
       await utils.table.getDataWindowed.invalidate({ tableId });
       setRowMenu(null);
     },
@@ -119,23 +155,39 @@ export function TableView({
     onError: (_err, _vars, ctx) => {
       if (ctx?.tempRowId) {
         pendingTempIds.current.delete(ctx.tempRowId);
+
+        if (removeOptimisticRow) {
+          removeOptimisticRow(ctx.tempRowId);
+        }
       }
       setRowMenu(null);
     },
   });
 
+  // ⚡ OPTIMISTIC: Delete row
   const deleteRow = api.row.delete.useMutation({
+    onMutate: (rowId) => {
+      // Optimistically delete
+      if (deleteRowOptimistically) {
+        deleteRowOptimistically(rowId);
+      }
+
+      return { rowId };
+    },
+
     onSuccess: async () => {
       await utils.table.getDataWindowed.invalidate({ tableId });
       setRowMenu(null);
     },
 
-    onError: () => {
+    onError: async (_err, _vars) => {
+      // Refresh to restore the row
+      await utils.table.getDataWindowed.invalidate({ tableId });
       setRowMenu(null);
     },
   });
 
-  // Context menu
+  // Context menu state
   const [rowMenu, setRowMenu] = useState<RowContextMenuState>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [openDirection, setOpenDirection] = useState<"up" | "down">("down");
@@ -189,6 +241,7 @@ export function TableView({
     void deleteRow.mutate(rowMenu.rowId);
   };
 
+  // Allow rapid clicking
   const handleAddRow = useCallback(() => {
     void appendRow.mutate({ tableId });
   }, [appendRow, tableId]);
@@ -418,6 +471,33 @@ export function TableView({
 
               const rowId = row.original.__rowId;
               const rowIndex = virtualRow.index;
+              const isPlaceholder = rowId.startsWith("placeholder-");
+
+              if (isPlaceholder) {
+                return (
+                  <tr
+                    key={`placeholder-${virtualRow.index}`}
+                    className="animate-pulse"
+                    style={{ height: 35 }}
+                  >
+                    {visibleColumns.map((col) => (
+                      <td
+                        key={col.id}
+                        className="border-r border-b border-gray-200 last:border-r-0"
+                        style={{
+                          width: `${col.getSize()}px`,
+                          minWidth: `${col.getSize()}px`,
+                          maxWidth: `${col.getSize()}px`,
+                          padding: "8px 12px",
+                        }}
+                      >
+                        <div className="h-4 rounded bg-gray-200" />
+                      </td>
+                    ))}
+                    <td className="w-12 max-w-12 min-w-12 px-3 py-2" />
+                  </tr>
+                );
+              }
 
               return (
                 <tr
@@ -455,14 +535,12 @@ export function TableView({
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          if (!rowId.startsWith("placeholder-")) {
-                            setRowMenu({
-                              rowId,
-                              rowIndex: row.index,
-                              x: e.clientX,
-                              y: e.clientY,
-                            });
-                          }
+                          setRowMenu({
+                            rowId,
+                            rowIndex: row.index,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
                         }}
                       >
                         {flexRender(
@@ -531,7 +609,7 @@ export function TableView({
         </table>
       </div>
 
-      {/* Context menu - same as before */}
+      {/* Context menu */}
       {rowMenu && (
         <div
           ref={menuRef}
