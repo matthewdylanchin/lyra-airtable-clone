@@ -18,12 +18,27 @@ export function useTableEditing({
   upsert,
   onCommit,
   pendingEditsRef,
+  // ✅ NEW: Add these functions to immediately update cache
+  setPendingCellEdit,
+  clearPendingCellEdit,
 }: {
   data: TableData | undefined;
   cellByKey: Map<string, Cell>;
   upsert: CellUpsertMutation;
   onCommit?: (rowId: string, columnId: string, value: string) => void;
   pendingEditsRef?: MutableRefObject<PendingEditsMap>;
+  // ✅ NEW: Functions to update cache immediately
+  setPendingCellEdit?: (
+    rowId: string,
+    columnId: string,
+    textValue: string | null,
+    numberValue: number | null,
+  ) => void;
+  clearPendingCellEdit?: (
+    rowId: string,
+    columnId: string,
+    newValue?: { textValue: string | null; numberValue: number | null },
+  ) => void;
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
@@ -37,7 +52,7 @@ export function useTableEditing({
     rowId: string,
     columnId: string,
     mode: "replace" | "append" = "replace",
-    initialChar?: string, // ✅ Add optional parameter
+    initialChar?: string,
   ) => {
     setLocalError(null);
 
@@ -101,7 +116,7 @@ export function useTableEditing({
     [],
   );
 
-  // In useTableEditing.ts - update onCommit immediately, NOT deferred
+  // ✅ OPTIMIZED: Update cache IMMEDIATELY on commit, before mutation
   const commitEdit = () => {
     const currentEditing = editingRef.current;
     const currentDraft = draftRef.current;
@@ -129,6 +144,11 @@ export function useTableEditing({
     // ✅ INSTANT: Update local state immediately (NO setTimeout)
     if (onCommit) {
       onCommit(rowId, columnId, currentDraft);
+    }
+
+    // ✅ NEW: Immediately update the cache so the new value shows instantly
+    if (setPendingCellEdit) {
+      setPendingCellEdit(rowId, columnId, textValue, numberValue);
     }
 
     // ✅ Clear editing state immediately (this makes tab feel instant)
@@ -171,25 +191,37 @@ export function useTableEditing({
       return;
     }
 
-    // ✅ Defer ONLY the mutation (not the UI update)
-    setTimeout(() => {
-      upsert.mutate(
-        {
-          rowId,
-          columnId,
-          textValue,
-          numberValue,
+    // ✅ Fire mutation in background (not blocking UI)
+    upsert.mutate(
+      {
+        rowId,
+        columnId,
+        textValue,
+        numberValue,
+      },
+      {
+        onSuccess: () => {
+          // ✅ Convert pending edit to confirmed cache value
+          if (clearPendingCellEdit) {
+            clearPendingCellEdit(rowId, columnId, {
+              textValue,
+              numberValue,
+            });
+          }
         },
-        {
-          onError: (error) => {
-            setLocalError(
-              error instanceof Error ? error.message : "Failed to save",
-            );
-          },
+        onError: (error) => {
+          // ✅ Revert on error by clearing pending edit without new value
+          if (clearPendingCellEdit) {
+            clearPendingCellEdit(rowId, columnId);
+          }
+          setLocalError(
+            error instanceof Error ? error.message : "Failed to save",
+          );
         },
-      );
-    }, 0);
+      },
+    );
   };
+
   return {
     editing,
     draft,

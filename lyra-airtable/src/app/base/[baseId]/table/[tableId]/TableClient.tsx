@@ -212,12 +212,7 @@ export default function TableClient() {
     },
 
     onSuccess: (_data, variables) => {
-      // ✅ Clear pending edit AND update cache with the new value immediately
-      clearPendingCellEdit(variables.rowId, variables.columnId, {
-        textValue: variables.textValue ?? null,
-        numberValue: variables.numberValue ?? null,
-      });
-
+      // Just clean up pendingUpdates tracking
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -226,9 +221,7 @@ export default function TableClient() {
     },
 
     onError: (_err, variables) => {
-      // Clear pending edit on error (no new value since it failed)
-      clearPendingCellEdit(variables.rowId, variables.columnId);
-
+      // Clean up pendingUpdates tracking
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -293,6 +286,8 @@ export default function TableClient() {
         [`${rowId}:${columnId}`]: value,
       }));
     },
+    setPendingCellEdit,
+    clearPendingCellEdit,
   });
 
   const flushPendingEdits = useCallback(
