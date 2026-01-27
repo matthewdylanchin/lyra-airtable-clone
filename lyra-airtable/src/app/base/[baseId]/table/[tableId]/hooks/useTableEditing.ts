@@ -2,7 +2,6 @@ import { useState, useCallback, useRef } from "react";
 import type { MutableRefObject } from "react";
 import type { TableData, Cell, Editing, CellUpsertMutation } from "../types";
 
-// ✅ NEW: Type for pending edits
 export type PendingEdit = {
   columnId: string;
   textValue: string | null;
@@ -18,7 +17,6 @@ export function useTableEditing({
   upsert,
   onCommit,
   pendingEditsRef,
-  // ✅ NEW: Add these functions to immediately update cache
   setPendingCellEdit,
   clearPendingCellEdit,
 }: {
@@ -27,7 +25,6 @@ export function useTableEditing({
   upsert: CellUpsertMutation;
   onCommit?: (rowId: string, columnId: string, value: string) => void;
   pendingEditsRef?: MutableRefObject<PendingEditsMap>;
-  // ✅ NEW: Functions to update cache immediately
   setPendingCellEdit?: (
     rowId: string,
     columnId: string,
@@ -44,7 +41,6 @@ export function useTableEditing({
   const [draft, setDraft] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // ✅ Refs for synchronous access (used in commitEdit)
   const editingRef = useRef<Editing>(null);
   const draftRef = useRef<string>("");
 
@@ -67,11 +63,9 @@ export function useTableEditing({
     const newDraft = initialChar ?? (mode === "append" ? String(value) : "");
     const newEditing = { rowId, columnId, originalValue: String(value) };
 
-    // ✅ Update refs (for synchronous access in commitEdit)
     draftRef.current = newDraft;
     editingRef.current = newEditing;
 
-    // ✅ Update state (to trigger re-render so input appears)
     setDraft(newDraft);
     setEditing(newEditing);
   };
@@ -89,7 +83,6 @@ export function useTableEditing({
     setDraft(value);
   }, []);
 
-  // ✅ Function to update the editing rowId when temp ID is replaced
   const updateEditingRowId = useCallback((tempId: string, realId: string) => {
     setEditing((prev) => {
       if (prev?.rowId === tempId) {
@@ -101,7 +94,6 @@ export function useTableEditing({
     });
   }, []);
 
-  // ✅ Function to update the editing columnId when temp column ID is replaced
   const updateEditingColumnId = useCallback(
     (tempId: string, realId: string) => {
       setEditing((prev) => {
@@ -116,14 +108,11 @@ export function useTableEditing({
     [],
   );
 
-  // ✅ OPTIMIZED: Update cache IMMEDIATELY on commit, before mutation
-  const commitEdit = () => {
+  const commitEdit = useCallback(() => {
     const currentEditing = editingRef.current;
     const currentDraft = draftRef.current;
 
-    if (!currentEditing) {
-      return;
-    }
+    if (!currentEditing) return;
 
     const { rowId, columnId, originalValue } = currentEditing;
 
@@ -137,28 +126,26 @@ export function useTableEditing({
 
     const column = data?.columns.find((c) => c.id === columnId);
     const isNumber = column?.type === "NUMBER";
-
     const textValue = isNumber ? null : currentDraft;
     const numberValue = isNumber ? Number(currentDraft) : null;
 
-    // ✅ INSTANT: Update local state immediately (NO setTimeout)
-    if (onCommit) {
-      onCommit(rowId, columnId, currentDraft);
-    }
-
-    // ✅ NEW: Immediately update the cache so the new value shows instantly
+    // ✅ 1. Update cache immediately (synchronous)
     if (setPendingCellEdit) {
       setPendingCellEdit(rowId, columnId, textValue, numberValue);
     }
 
-    // ✅ Clear editing state immediately (this makes tab feel instant)
+    // ✅ 2. Call onCommit
+    if (onCommit) {
+      onCommit(rowId, columnId, currentDraft);
+    }
+
+    // ✅ 3. Clear editing state IMMEDIATELY (no transitions!)
     editingRef.current = null;
     draftRef.current = "";
     setEditing(null);
     setDraft("");
     setLocalError(null);
 
-    // ✅ Check if this is a temporary row
     const isTempRow = rowId.startsWith("temp-");
     const isTempColumn = columnId.startsWith("temp-");
 
@@ -191,26 +178,16 @@ export function useTableEditing({
       return;
     }
 
-    // ✅ Fire mutation in background (not blocking UI)
+    // ✅ 4. Fire mutation (async, doesn't block)
     upsert.mutate(
-      {
-        rowId,
-        columnId,
-        textValue,
-        numberValue,
-      },
+      { rowId, columnId, textValue, numberValue },
       {
         onSuccess: () => {
-          // ✅ Convert pending edit to confirmed cache value
           if (clearPendingCellEdit) {
-            clearPendingCellEdit(rowId, columnId, {
-              textValue,
-              numberValue,
-            });
+            clearPendingCellEdit(rowId, columnId, { textValue, numberValue });
           }
         },
         onError: (error) => {
-          // ✅ Revert on error by clearing pending edit without new value
           if (clearPendingCellEdit) {
             clearPendingCellEdit(rowId, columnId);
           }
@@ -220,7 +197,14 @@ export function useTableEditing({
         },
       },
     );
-  };
+  }, [
+    data?.columns,
+    onCommit,
+    setPendingCellEdit,
+    clearPendingCellEdit,
+    upsert,
+    pendingEditsRef,
+  ]);
 
   return {
     editing,
