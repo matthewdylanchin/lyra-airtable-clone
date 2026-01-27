@@ -262,10 +262,17 @@ export default function AddColumnButton({
 
       return { tempId };
     },
+
     onSuccess: (realColumn, _vars, ctx) => {
       if (!ctx?.tempId) return;
+
+      // ✅ Just replace the ID, don't invalidate
       replaceOptimisticColumnId?.(ctx.tempId, realColumn.id);
+
+      // ❌ REMOVE THIS:
+      // await utils.table.getDataWindowed.invalidate({ tableId });
     },
+
     onError: (_err, _vars, ctx) => {
       if (ctx?.tempId) {
         removeOptimisticColumn?.(ctx.tempId);
@@ -282,7 +289,7 @@ export default function AddColumnButton({
         id: tempId,
         name: variables.name,
         type: variables.type,
-        order: Date.now(), // or anchor-based logic
+        order: Date.now(),
       });
 
       return { tempId };
@@ -290,7 +297,14 @@ export default function AddColumnButton({
 
     onSuccess: (realColumn, _, ctx) => {
       if (!ctx?.tempId) return;
+
+      // ✅ Just replace the ID
       replaceOptimisticColumnId?.(ctx.tempId, realColumn.id);
+
+      // ✅ For insertions, delay invalidation to get proper ordering
+      setTimeout(() => {
+        void utils.table.getDataWindowed.invalidate({ tableId });
+      }, 100);
     },
 
     onError: (_err, _vars, ctx) => {

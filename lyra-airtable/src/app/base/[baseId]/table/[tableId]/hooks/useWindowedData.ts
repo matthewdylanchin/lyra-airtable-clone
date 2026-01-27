@@ -232,6 +232,16 @@ export function useWindowedData({
             newCellCache.set(cellKey, cell as CellData);
           });
 
+          const newOptimisticColumns = new Map(prev.optimisticColumns);
+          const serverColumnIds = new Set(result.columns.map((c) => c.id));
+
+          for (const [tempId, optCol] of prev.optimisticColumns) {
+            // If the real column ID exists in server data, remove optimistic version
+            if (serverColumnIds.has(optCol.column.id)) {
+              newOptimisticColumns.delete(tempId);
+            }
+          }
+
           const newLoadingRanges = new Set(prev.loadingRanges);
           newLoadingRanges.delete(rangeKey);
 
@@ -245,6 +255,7 @@ export function useWindowedData({
             loadingRanges: newLoadingRanges,
             isInitialLoading: false,
             error: null,
+            optimisticColumns: newOptimisticColumns,
           };
         });
       } catch (error) {
@@ -385,10 +396,11 @@ export function useWindowedData({
         return optimisticRow.cells.find((c) => c.columnId === columnId) ?? null;
       }
 
-      // 3. Check optimistic columns
-      const optimisticColumn = state.optimisticColumns.get(columnId);
-      if (optimisticColumn) {
-        return optimisticColumn.cellValues.get(rowId) ?? null;
+      // 3. Check optimistic columns - search by column.id, not map key
+      for (const [, optimisticColumn] of state.optimisticColumns) {
+        if (optimisticColumn.column.id === columnId) {
+          return optimisticColumn.cellValues.get(rowId) ?? null;
+        }
       }
 
       // 4. Finally check cache
@@ -401,7 +413,6 @@ export function useWindowedData({
       state.pendingCellEdits,
     ],
   );
-
   // Load a range
   const loadRange = useCallback(
     async (startIndex: number, endIndex: number) => {
@@ -704,11 +715,13 @@ export function useWindowedData({
         return {
           ...prev,
           optimisticColumns: newOptimisticColumns,
+          // ✅ Don't modify state.columns - keep optimistic separate
         };
       });
     },
     [],
   );
+
   const removeOptimisticColumn = useCallback((tempId: string) => {
     setState((prev) => {
       const newOptimisticColumns = new Map(prev.optimisticColumns);
@@ -727,14 +740,52 @@ export function useWindowedData({
         const optimisticColumn = prev.optimisticColumns.get(tempId);
         if (!optimisticColumn) return prev;
 
+        // ✅ Keep the column in optimistic map but update its ID
         const newOptimisticColumns = new Map(prev.optimisticColumns);
-        newOptimisticColumns.delete(tempId);
 
-        // Don't add to cache immediately - let the next fetch handle it
+        // Update the column with real ID
+        const updatedColumn: ColumnData = {
+          ...optimisticColumn.column,
+          id: realId,
+        };
+
+        // Update all cells in this column to use real column ID
+        const updatedCellValues = new Map<string, CellData>();
+
+        for (const [rowId, cell] of optimisticColumn.cellValues) {
+          const updatedCell: CellData = {
+            ...cell,
+            columnId: realId,
+            id: `${rowId}-${realId}`,
+          };
+          updatedCellValues.set(rowId, updatedCell);
+        }
+
+        // Store updated optimistic column (still keyed by tempId)
+        newOptimisticColumns.set(tempId, {
+          column: updatedColumn,
+          cellValues: updatedCellValues,
+        });
+
+        // Update pending edits to use real column ID
+        const newPendingCellEdits = new Map(prev.pendingCellEdits);
+        for (const [key, edit] of newPendingCellEdits) {
+          if (key.endsWith(`:${tempId}`)) {
+            const rowId = key.split(":")[0];
+            newPendingCellEdits.delete(key);
+            newPendingCellEdits.set(`${rowId}:${realId}`, {
+              ...edit,
+              columnId: realId,
+            });
+          }
+        }
 
         return {
           ...prev,
           optimisticColumns: newOptimisticColumns,
+          pendingCellEdits: newPendingCellEdits,
+          // ✅ Don't touch state.columns or cellCache
+          // The column stays in optimistic map until next fetch
         };
       });
     },
