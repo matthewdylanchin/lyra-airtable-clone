@@ -85,22 +85,45 @@ export default function SortPanel({
   }, [isOpen, onClose, triggerRef]);
 
   const addSort = () => {
-    onChange([
+    const newSorts = [
       ...sorts,
       {
         id: uuidv4(),
         columnId: columns[0]?.id ?? "",
-        direction: "asc",
+        direction: "asc" as const,
       },
-    ]);
+    ];
+
+    // Apply immediately
+    onChange(newSorts);
   };
 
   const updateSort = (id: string, key: keyof SortCondition, value: string) => {
-    onChange(sorts.map((s) => (s.id === id ? { ...s, [key]: value } : s)));
+    const newSorts = sorts.map((s) =>
+      s.id === id ? { ...s, [key]: value } : s,
+    );
+
+    // Apply immediately
+    onChange(newSorts);
   };
 
   const removeSort = (id: string) => {
-    onChange(sorts.filter((s) => s.id !== id));
+    const newSorts = sorts.filter((s) => s.id !== id);
+
+    // Apply immediately
+    onChange(newSorts);
+  };
+
+  // Quick sort - click column to sort immediately
+  const handleQuickSort = (columnId: string) => {
+    const newSort = {
+      id: uuidv4(),
+      columnId,
+      direction: "asc" as const,
+    };
+
+    // Apply immediately
+    onChange([newSort]);
   };
 
   if (!isOpen || !mounted) return null;
@@ -126,15 +149,7 @@ export default function SortPanel({
             {columns.map((col) => (
               <button
                 key={col.id}
-                onClick={() =>
-                  onChange([
-                    {
-                      id: uuidv4(),
-                      columnId: col.id,
-                      direction: "asc",
-                    },
-                  ])
-                }
+                onClick={() => handleQuickSort(col.id)}
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-zinc-50"
               >
                 <span className="text-zinc-400">

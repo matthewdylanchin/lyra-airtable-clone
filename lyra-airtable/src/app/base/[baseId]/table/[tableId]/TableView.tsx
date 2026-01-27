@@ -36,6 +36,10 @@ export function TableView({
   insertOptimisticRow,
   removeOptimisticRow,
   deleteRowOptimistically,
+  // NEW: Optimistic column functions
+  addOptimisticColumn,
+  removeOptimisticColumn,
+  replaceOptimisticColumnId,
 }: {
   table: Table<TableRow>;
   addColumnOpen: AddColumnState;
@@ -71,6 +75,15 @@ export function TableView({
   insertOptimisticRow?: (tempId: string, atIndex: number) => void;
   removeOptimisticRow?: (tempId: string) => void;
   deleteRowOptimistically?: (rowId: string) => void;
+  // NEW: Optimistic column functions
+  addOptimisticColumn?: (column: {
+    id: string;
+    name: string;
+    type: "TEXT" | "NUMBER";
+    order: number;
+  }) => void;
+  removeOptimisticColumn?: (tempId: string) => void;
+  replaceOptimisticColumnId?: (tempId: string, realId: string) => void;
 }) {
   const { tableId } = useParams<{ tableId: string }>();
   const utils = api.useUtils();
@@ -423,6 +436,10 @@ export function TableView({
                     queryKey={queryKey}
                     className="absolute inset-0"
                     onFlushPendingColumnEdits={onFlushPendingColumnEdits}
+                    // Pass column optimistic functions
+                    addOptimisticColumn={addOptimisticColumn}
+                    removeOptimisticColumn={removeOptimisticColumn}
+                    replaceOptimisticColumnId={replaceOptimisticColumnId}
                   />
                 </th>
               </tr>
@@ -737,6 +754,10 @@ export function TableView({
           initialPosition={addColumnOpen.position}
           queryKey={queryKey}
           onFlushPendingColumnEdits={onFlushPendingColumnEdits}
+          // Pass column optimistic functions
+          addOptimisticColumn={addOptimisticColumn}
+          removeOptimisticColumn={removeOptimisticColumn}
+          replaceOptimisticColumnId={replaceOptimisticColumnId}
         />
       )}
     </div>

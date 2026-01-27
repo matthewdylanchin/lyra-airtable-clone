@@ -158,6 +158,11 @@ export default function AddColumnButton({
   queryKey,
   className,
   onFlushPendingColumnEdits,
+
+  // ✅ NEW
+  addOptimisticColumn,
+  removeOptimisticColumn,
+  replaceOptimisticColumnId,
 }: {
   tableId: string;
   insert?: ColumnInsertPosition;
@@ -182,7 +187,17 @@ export default function AddColumnButton({
     }[];
   };
   className?: string;
-  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void; // ✅ NEW
+  onFlushPendingColumnEdits?: (tempId: string, realId: string) => void;
+  addOptimisticColumn?: (column: {
+    id: string;
+    name: string;
+    type: "TEXT" | "NUMBER";
+    order: number;
+  }) => void;
+
+  removeOptimisticColumn?: (tempId: string) => void;
+
+  replaceOptimisticColumnId?: (tempId: string, realId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"menu" | "form">("menu");
@@ -236,59 +251,24 @@ export default function AddColumnButton({
   // ⚡ OPTIMISTIC: Create column
   const createColumn = api.column.create.useMutation({
     onMutate: async (variables) => {
-      // Cancel outgoing refetches
-      await utils.table.getData.cancel(queryKey);
+      const tempId = `temp-col-${crypto.randomUUID()}`;
 
-      // Snapshot previous data
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
-      const tempColumnId = `temp-col-${crypto.randomUUID()}`;
-
-      // ✨ Optimistically add column to cache
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old?.pages.length) return old;
-
-        const existingColumns = old.pages[0]?.columns ?? [];
-        const newOrder = existingColumns.length;
-
-        const newColumn = {
-          id: tempColumnId,
-          name: variables.name,
-          type: variables.type!,
-          order: newOrder,
-        };
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            columns: [...page.columns, newColumn],
-            // Add empty cells for this column to all rows
-            cells: [
-              ...page.cells,
-              ...page.rows.map((row) => ({
-                id: `temp-cell-${crypto.randomUUID()}`,
-                rowId: row.id,
-                columnId: tempColumnId,
-                textValue: "",
-                numberValue: null,
-                updatedAt: new Date(),
-              })),
-            ],
-          })),
-        };
+      addOptimisticColumn?.({
+        id: tempId,
+        name: variables.name,
+        type: variables.type!,
+        order: Number.MAX_SAFE_INTEGER,
       });
 
-      return { previousData, tempColumnId };
+      return { tempId };
     },
-
     onSuccess: (realColumn, _vars, ctx) => {
-      if (!ctx?.tempColumnId) return;
-      replaceTempColumnId(ctx.tempColumnId, realColumn.id);
+      if (!ctx?.tempId) return;
+      replaceOptimisticColumnId?.(ctx.tempId, realColumn.id);
     },
-
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
+      if (ctx?.tempId) {
+        removeOptimisticColumn?.(ctx.tempId);
       }
     },
   });
@@ -296,73 +276,26 @@ export default function AddColumnButton({
   // ⚡ OPTIMISTIC: Insert column at position
   const insertColumn = api.column.insertAtPosition.useMutation({
     onMutate: async (variables) => {
-      await utils.table.getData.cancel(queryKey);
-      const previousData = utils.table.getData.getInfiniteData(queryKey);
+      const tempId = `temp-col-${crypto.randomUUID()}`;
 
-      const tempColumnId = `temp-col-${crypto.randomUUID()}`;
-      // ✨ Optimistically insert column
-      utils.table.getData.setInfiniteData(queryKey, (old) => {
-        if (!old?.pages.length) return old;
-
-        const existingColumns = old.pages[0]?.columns ?? [];
-
-        // Find anchor column's order
-        const anchorColumn = existingColumns.find(
-          (c) => c.id === variables.anchorColumnId,
-        );
-        const anchorOrder = anchorColumn?.order ?? 0;
-
-        const newOrder =
-          variables.position === "before" ? anchorOrder : anchorOrder + 1;
-
-        // 🔥 SHIFT EXISTING COLUMNS
-        const shiftedColumns = existingColumns.map((col) => {
-          if (col.order >= newOrder) {
-            return { ...col, order: col.order + 1 };
-          }
-          return col;
-        });
-
-        const newColumn = {
-          id: tempColumnId,
-          name: variables.name,
-          type: variables.type,
-          order: newOrder,
-        };
-
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            columns: [...shiftedColumns, newColumn].sort(
-              (a, b) => a.order - b.order,
-            ),
-            cells: [
-              ...page.cells,
-              ...page.rows.map((row) => ({
-                id: `temp-cell-${crypto.randomUUID()}`,
-                rowId: row.id,
-                columnId: tempColumnId,
-                textValue: "",
-                numberValue: null,
-                updatedAt: new Date(),
-              })),
-            ],
-          })),
-        };
+      addOptimisticColumn?.({
+        id: tempId,
+        name: variables.name,
+        type: variables.type,
+        order: Date.now(), // or anchor-based logic
       });
 
-      return { previousData, tempColumnId };
+      return { tempId };
     },
 
     onSuccess: (realColumn, _, ctx) => {
-      if (!ctx?.tempColumnId) return;
-      replaceTempColumnId(ctx.tempColumnId, realColumn.id);
+      if (!ctx?.tempId) return;
+      replaceOptimisticColumnId?.(ctx.tempId, realColumn.id);
     },
 
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previousData) {
-        utils.table.getData.setInfiniteData(queryKey, ctx.previousData);
+      if (ctx?.tempId) {
+        removeOptimisticColumn?.(ctx.tempId);
       }
     },
   });

@@ -33,24 +33,55 @@ export default function TableClient() {
   const {
     searchBarOpen,
     setSearchBarOpen,
-    searchQuery,
-    setSearchQuery,
-    searchButtonRef,
     filterPanelOpen,
     setFilterPanelOpen,
     filterButtonRef,
-    filters,
-    setFilters,
-    filterConjunction,
-    setFilterConjunction,
     sortPanelOpen,
     setSortPanelOpen,
     sortButtonRef,
-    sorts,
-    setSorts,
     setIsBusy,
     isBulkLoading,
   } = useTableView();
+
+  // ========================================
+  // DEBOUNCED SEARCH AND FILTER STATE
+  // ========================================
+
+  // Local state for immediate UI feedback
+  const [localSearchQuery, setLocalSearchQuery] = useState("");
+  const [localFilters, setLocalFilters] = useState<FilterCondition[]>([]);
+  const [localFilterConjunction, setLocalFilterConjunction] = useState<
+    "and" | "or"
+  >("and");
+  const [localSorts, setSorts] = useState<SortType[]>([]);
+
+  // Debounced state that actually triggers queries
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [debouncedFilters, setDebouncedFilters] = useState<FilterCondition[]>(
+    [],
+  );
+  const [debouncedFilterConjunction, setDebouncedFilterConjunction] = useState<
+    "and" | "or"
+  >("and");
+
+  // Debounce search (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(localSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localSearchQuery]);
+
+  // Debounce filters (500ms - longer since more complex)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedFilters(localFilters);
+      setDebouncedFilterConjunction(localFilterConjunction);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [localFilters, localFilterConjunction]);
+
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};
@@ -79,7 +110,7 @@ export default function TableClient() {
   );
   const pendingEditsRef = useRef<PendingEditsMap>(new Map());
 
-  // Use windowed data hook
+  // Use windowed data hook with debounced values
   const {
     table: tableInfo,
     columns,
@@ -99,14 +130,19 @@ export default function TableClient() {
     removeOptimisticRow,
     replaceOptimisticRowId,
     deleteRowOptimistically,
+    addOptimisticColumn,
+    removeOptimisticColumn,
+    replaceOptimisticColumnId,
+    setPendingCellEdit,
+    clearPendingCellEdit,
   } = useWindowedData({
     tableId,
     windowSize: 500,
     overscan: 100,
-    searchQuery: searchQuery || undefined,
-    filters: filters.length > 0 ? filters : undefined,
-    filterConjunction,
-    sorts: sorts.length > 0 ? sorts : undefined,
+    searchQuery: debouncedSearchQuery || undefined,
+    filters: debouncedFilters.length > 0 ? debouncedFilters : undefined,
+    filterConjunction: debouncedFilterConjunction,
+    sorts: localSorts.length > 0 ? localSorts : undefined,
   });
 
   // Build query key for mutations
@@ -114,11 +150,11 @@ export default function TableClient() {
     () => ({
       tableId,
       limit: 500,
-      searchQuery: searchQuery || undefined,
-      filterConjunction,
+      searchQuery: debouncedSearchQuery || undefined,
+      filterConjunction: debouncedFilterConjunction,
       filters:
-        filters.length > 0
-          ? filters
+        debouncedFilters.length > 0
+          ? debouncedFilters
               .filter((f): f is Required<FilterCondition> => !!f.value)
               .map((f) => ({
                 columnId: f.columnId,
@@ -127,15 +163,21 @@ export default function TableClient() {
               }))
           : undefined,
       sorts:
-        sorts.length > 0
-          ? sorts.map((s: SortType) => ({
+        localSorts.length > 0
+          ? localSorts.map((s: SortType) => ({
               columnId: s.columnId,
               type: "text" as const,
               direction: s.direction,
             }))
           : undefined,
     }),
-    [tableId, searchQuery, filterConjunction, filters, sorts],
+    [
+      tableId,
+      debouncedSearchQuery,
+      debouncedFilterConjunction,
+      debouncedFilters,
+      localSorts,
+    ],
   );
 
   const { setDataQueryKey } = useTableView();
@@ -154,6 +196,14 @@ export default function TableClient() {
         return;
       }
 
+      // Mark cell as pending
+      setPendingCellEdit(
+        variables.rowId,
+        variables.columnId,
+        variables.textValue ?? null,
+        variables.numberValue ?? null,
+      );
+
       setPendingUpdates((prev) => ({
         ...prev,
         [`${variables.rowId}:${variables.columnId}`]:
@@ -162,6 +212,9 @@ export default function TableClient() {
     },
 
     onSuccess: (_data, variables) => {
+      // Clear pending edit - allow server data to show
+      clearPendingCellEdit(variables.rowId, variables.columnId);
+
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -170,6 +223,9 @@ export default function TableClient() {
     },
 
     onError: (_err, variables) => {
+      // Clear pending edit on error
+      clearPendingCellEdit(variables.rowId, variables.columnId);
+
       setPendingUpdates((prev) => {
         const next = { ...prev };
         delete next[`${variables.rowId}:${variables.columnId}`];
@@ -180,7 +236,7 @@ export default function TableClient() {
 
   const [selectedCell, setSelectedCell] = useState<SelectedCell>(null);
 
-  // Build table data from windowed cache
+  // Build table data from windowed cache + optimistic + pending edits
   const tableData = useMemo((): TableRow[] => {
     const rows: TableRow[] = [];
 
@@ -191,16 +247,9 @@ export default function TableClient() {
         const rowData: TableRow = { __rowId: row.id };
 
         columns.forEach((col) => {
+          // getCellValue already checks pending edits first!
           const cell = getCellValue(row.id, col.id);
-          const pendingKey = `${row.id}:${col.id}`;
-
-          if (pendingUpdates[pendingKey] !== undefined) {
-            rowData[col.id] = pendingUpdates[pendingKey];
-          } else if (cell) {
-            rowData[col.id] = cell.textValue ?? cell.numberValue ?? null;
-          } else {
-            rowData[col.id] = null;
-          }
+          rowData[col.id] = cell?.textValue ?? cell?.numberValue ?? null;
         });
 
         rows.push(rowData);
@@ -215,7 +264,7 @@ export default function TableClient() {
     }
 
     return rows;
-  }, [totalCount, getRowAtIndex, getCellValue, columns, pendingUpdates]);
+  }, [totalCount, getRowAtIndex, getCellValue, columns]);
 
   const commitEditSafe = () => {
     void commitEdit();
@@ -249,7 +298,7 @@ export default function TableClient() {
       if (type === "row") {
         updateEditingRowId(tempId, realId);
 
-        // Replace optimistic row with real ID in windowed data
+        // Replace optimistic row with real ID
         replaceOptimisticRowId(tempId, realId);
 
         const pendingEdits = pendingEditsRef.current.get(tempId);
@@ -283,6 +332,9 @@ export default function TableClient() {
         });
       } else {
         updateEditingColumnId(tempId, realId);
+
+        // Replace optimistic column with real ID
+        replaceOptimisticColumnId(tempId, realId);
 
         const queueKey = `col:${tempId}`;
         const pendingEdits = pendingEditsRef.current.get(queueKey);
@@ -319,7 +371,13 @@ export default function TableClient() {
         });
       }
     },
-    [upsert, updateEditingRowId, updateEditingColumnId, replaceOptimisticRowId],
+    [
+      upsert,
+      updateEditingRowId,
+      updateEditingColumnId,
+      replaceOptimisticRowId,
+      replaceOptimisticColumnId,
+    ],
   );
 
   const flushPendingColumnEdits = useCallback(
@@ -329,11 +387,11 @@ export default function TableClient() {
     [flushPendingEdits],
   );
 
-  // Search match tracking
+  // Search match tracking - use LOCAL search query for immediate highlighting
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const matchingCells = useMemo(() => {
-    if (!searchQuery || columns.length === 0) return [];
+    if (!localSearchQuery || columns.length === 0) return [];
 
     const matches: Array<{
       rowId: string;
@@ -349,7 +407,7 @@ export default function TableClient() {
         const value = row[col.id];
         const valueStr = value != null ? String(value) : "";
 
-        if (valueStr.toLowerCase().includes(searchQuery.toLowerCase())) {
+        if (valueStr.toLowerCase().includes(localSearchQuery.toLowerCase())) {
           matches.push({
             rowId: row.__rowId,
             columnId: col.id,
@@ -361,11 +419,11 @@ export default function TableClient() {
     });
 
     return matches;
-  }, [searchQuery, tableData, columns]);
+  }, [localSearchQuery, tableData, columns]);
 
   useEffect(() => {
     setCurrentMatchIndex(0);
-  }, [searchQuery]);
+  }, [localSearchQuery]);
 
   const currentMatch = matchingCells[currentMatchIndex] ?? null;
 
@@ -391,12 +449,12 @@ export default function TableClient() {
   }, [currentMatch, searchBarOpen]);
 
   const filteredColumnIds = useMemo(() => {
-    return new Set(filters.map((f) => f.columnId));
-  }, [filters]);
+    return new Set(debouncedFilters.map((f) => f.columnId));
+  }, [debouncedFilters]);
 
   const sortedColumnIds = useMemo(() => {
-    return new Set(sorts.map((s) => s.columnId));
-  }, [sorts]);
+    return new Set(localSorts.map((s) => s.columnId));
+  }, [localSorts]);
 
   const rowsWithCellData = useMemo(() => {
     const set = new Set<string>();
@@ -438,7 +496,7 @@ export default function TableClient() {
           setAddColumnOpen({ insert, position });
         },
         upsert,
-        searchQuery,
+        searchQuery: localSearchQuery, // Use local for immediate highlighting
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
@@ -453,7 +511,7 @@ export default function TableClient() {
       startEdit,
       cancelEdit,
       upsert,
-      searchQuery,
+      localSearchQuery,
       currentMatch,
       filteredColumnIds,
       sortedColumnIds,
@@ -562,11 +620,11 @@ export default function TableClient() {
         isOpen={searchBarOpen}
         onClose={() => {
           setSearchBarOpen(false);
-          setSearchQuery("");
+          setLocalSearchQuery("");
           setCurrentMatchIndex(0);
         }}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        searchQuery={localSearchQuery}
+        onSearchChange={setLocalSearchQuery}
         totalResults={matchingCells.length}
         currentResultIndex={currentMatchIndex}
         onNextResult={goToNextMatch}
@@ -584,18 +642,18 @@ export default function TableClient() {
         isOpen={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
         columns={columnsForPanels}
-        filters={filters}
-        onChange={setFilters}
+        filters={localFilters}
+        onChange={setLocalFilters}
         triggerRef={filterButtonRef ?? undefined}
-        conjunctionMode={filterConjunction}
-        onConjunctionModeChange={setFilterConjunction}
+        conjunctionMode={localFilterConjunction}
+        onConjunctionModeChange={setLocalFilterConjunction}
       />
 
       <SortPanel
         isOpen={sortPanelOpen}
         onClose={() => setSortPanelOpen(false)}
         columns={columnsForPanels}
-        sorts={sorts}
+        sorts={localSorts}
         onChange={setSorts}
         triggerRef={sortButtonRef ?? undefined}
       />
@@ -621,11 +679,15 @@ export default function TableClient() {
           onFlushPendingColumnEdits={flushPendingColumnEdits}
           totalCount={totalCount}
           isRowLoaded={isRowLoaded}
-          // Pass optimistic row functions
+          // Pass optimistic functions
           addOptimisticRow={addOptimisticRow}
           insertOptimisticRow={insertOptimisticRow}
           removeOptimisticRow={removeOptimisticRow}
           deleteRowOptimistically={deleteRowOptimistically}
+          // Pass column optimistic functions
+          addOptimisticColumn={addOptimisticColumn}
+          removeOptimisticColumn={removeOptimisticColumn}
+          replaceOptimisticColumnId={replaceOptimisticColumnId}
         />
       </div>
       <BottomBar rowCount={totalCount} />
