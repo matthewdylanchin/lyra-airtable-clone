@@ -248,13 +248,12 @@ export function useWindowedData({
             rowCache: newRowCache,
             cellCache: newCellCache,
             loadingRanges: newLoadingRanges,
-            isInitialLoading: false, // ✅ Always set to false after first load
+            isInitialLoading: false,
             error: null,
             optimisticColumns: newOptimisticColumns,
           };
         });
 
-        // ✅ Mark that we've loaded at least once
         hasLoadedOnce.current = true;
       } catch (error) {
         setState((prev) => {
@@ -280,16 +279,16 @@ export function useWindowedData({
   useEffect(() => {
     queryChangeInProgress.current = true;
 
-    // ✅ CRITICAL FIX: Only show loading on first load, not on filter/sort changes
+    // ✅ CRITICAL: DON'T clear cache on filter/sort changes - keep old data visible
     setState((prev) => ({
       ...prev,
-      table: hasLoadedOnce.current ? prev.table : null, // Keep table if we've loaded before
-      columns: hasLoadedOnce.current ? prev.columns : [], // Keep columns if we've loaded before
-      totalCount: prev.totalCount,
-      rowCache: new Map(), // Clear cache
-      cellCache: new Map(), // Clear cache
+      table: hasLoadedOnce.current ? prev.table : null,
+      columns: hasLoadedOnce.current ? prev.columns : [],
+      totalCount: prev.totalCount, // ✅ Keep old count
+      rowCache: hasLoadedOnce.current ? prev.rowCache : new Map(), // ✅ Keep old data!
+      cellCache: hasLoadedOnce.current ? prev.cellCache : new Map(), // ✅ Keep old data!
       loadingRanges: new Set(),
-      isInitialLoading: !hasLoadedOnce.current, // ✅ Only show loading on first load
+      isInitialLoading: !hasLoadedOnce.current,
       error: null,
     }));
 
@@ -470,7 +469,6 @@ export function useWindowedData({
     [state.loadingRanges, windowSize],
   );
 
-  // ... (rest of the functions remain the same - addOptimisticRow, insertOptimisticRow, etc.)
   const addOptimisticRow = useCallback((tempId: string) => {
     setState((prev) => {
       const newOptimisticRows = new Map(prev.optimisticRows);
