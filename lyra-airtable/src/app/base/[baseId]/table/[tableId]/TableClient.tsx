@@ -42,6 +42,12 @@ export default function TableClient() {
     sortButtonRef,
     setIsBusy,
     isBulkLoading,
+    filters: contextFilters,
+    setFilters: setContextFilters,
+    sorts: contextSorts,
+    setSorts: setContextSorts,
+    filterConjunction: contextFilterConjunction,
+    setFilterConjunction: setContextFilterConjunction,
   } = useTableView();
 
   // ========================================
@@ -52,11 +58,11 @@ export default function TableClient() {
   // ========================================
   // DEBOUNCED FILTER AND SORT STATE
   // ========================================
-  const [localFilters, setLocalFilters] = useState<FilterCondition[]>([]);
+  const [localFilters, setLocalFilters] = useState<FilterCondition[]>(contextFilters);
   const [localFilterConjunction, setLocalFilterConjunction] = useState<
     "and" | "or"
-  >("and");
-  const [localSorts, setSorts] = useState<SortType[]>([]);
+  >(contextFilterConjunction);
+  const [localSorts, setSorts] = useState<SortType[]>(contextSorts);
 
   // Debounced state that actually triggers queries (filters only, NOT search)
   const [debouncedFilters, setDebouncedFilters] = useState<FilterCondition[]>(
@@ -74,6 +80,32 @@ export default function TableClient() {
     }, 500);
     return () => clearTimeout(timer);
   }, [localFilters, localFilterConjunction]);
+
+  // Sync FROM context TO local when view loads (e.g., on page refresh)
+  useEffect(() => {
+    setLocalFilters(contextFilters);
+  }, [contextFilters]);
+
+  useEffect(() => {
+    setSorts(contextSorts);
+  }, [contextSorts]);
+
+  useEffect(() => {
+    setLocalFilterConjunction(contextFilterConjunction);
+  }, [contextFilterConjunction]);
+
+  // Sync local filters and sorts TO context for ViewActionBar
+  useEffect(() => {
+    setContextFilters(localFilters);
+  }, [localFilters, setContextFilters]);
+
+  useEffect(() => {
+    setContextSorts(localSorts);
+  }, [localSorts, setContextSorts]);
+
+  useEffect(() => {
+    setContextFilterConjunction(localFilterConjunction);
+  }, [localFilterConjunction, setContextFilterConjunction]);
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};

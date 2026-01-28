@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import {
   ChevronDown,
   EyeOff,
@@ -102,39 +102,47 @@ export default function ViewActionBar() {
     },
   );
 
+  const columns = useMemo(() => data?.pages[0]?.columns ?? [], [data?.pages]);
+
   // Get unique filtered column names
-  const filteredColumnNames = filters
-    .map((f) => {
-      const column = data?.pages[0]?.columns.find((c) => c.id === f.columnId);
-      return column?.name;
-    })
-    .filter(Boolean)
-    .filter((name, index, self) => self.indexOf(name) === index);
+  const filteredColumnNames = useMemo(() => {
+    if (columns.length === 0) return [];
+    return filters
+      .map((f) => {
+        const column = columns.find((c) => c.id === f.columnId);
+        return column?.name;
+      })
+      .filter(Boolean)
+      .filter((name, index, self) => self.indexOf(name) === index);
+  }, [filters, columns]);
 
   // Get unique sorted column names
-  const sortedColumnNames = sorts
-    .map((s) => {
-      const column = data?.pages[0]?.columns.find((c) => c.id === s.columnId);
-      return column?.name;
-    })
-    .filter(Boolean)
-    .filter((name, index, self) => self.indexOf(name) === index);
+  const sortedColumnNames = useMemo(() => {
+    if (columns.length === 0) return [];
+    return sorts
+      .map((s) => {
+        const column = columns.find((c) => c.id === s.columnId);
+        return column?.name;
+      })
+      .filter(Boolean)
+      .filter((name, index, self) => self.indexOf(name) === index);
+  }, [sorts, columns]);
 
   // Generate filter button text
-  const getFilterButtonText = () => {
+  const filterButtonText = useMemo(() => {
     if (filters.length === 0) return "Filter";
     if (filteredColumnNames.length === 1) {
       return `Filtered by ${filteredColumnNames[0]}`;
     }
     const otherCount = filteredColumnNames.length - 1;
     return `Filtered by ${filteredColumnNames[0]} and ${otherCount} other field${otherCount > 1 ? "s" : ""}`;
-  };
+  }, [filters.length, filteredColumnNames]);
 
   // Generate sort button text
-  const getSortButtonText = () => {
+  const sortButtonText = useMemo(() => {
     if (sorts.length === 0) return "Sort";
     return `Sorted by ${sorts.length} field${sorts.length > 1 ? "s" : ""}`;
-  };
+  }, [sorts.length]);
 
   return (
     <div className="h-[44px] border-b border-zinc-200 bg-white">
@@ -187,7 +195,7 @@ export default function ViewActionBar() {
             }`}
           >
             <ListFilter className="h-4 w-4" />
-            {getFilterButtonText()}
+            {filterButtonText}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
@@ -205,7 +213,7 @@ export default function ViewActionBar() {
             }`}
           >
             <ArrowDownUp className="h-4 w-4" />
-            {getSortButtonText()}
+            {sortButtonText}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
