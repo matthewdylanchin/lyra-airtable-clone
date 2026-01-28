@@ -12,6 +12,7 @@ export function useKeyboardNavigation({
   startEdit,
   setDraft,
   commitEdit,
+  cancelEdit, // ✅ Add cancelEdit
 }: {
   table: Table<TableRow>;
   selectedCell: SelectedCell;
@@ -26,6 +27,7 @@ export function useKeyboardNavigation({
   ) => void;
   setDraft: (v: string) => void;
   commitEdit: () => void;
+  cancelEdit: () => void; // ✅ Add cancelEdit type
 }) {
   // ✅ Keep a ref of selectedCell for instant synchronous access
   const selectedCellRef = useRef(selectedCell);
@@ -36,6 +38,14 @@ export function useKeyboardNavigation({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // ✅ CRITICAL: Always allow Escape to cancel editing (prevents keyboard lock)
+      if (e.key === "Escape" && editingRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelEdit();
+        return;
+      }
+
       // ✅ CRITICAL: Handle Tab with HIGHEST PRIORITY
       if (e.key === "Tab") {
         e.preventDefault();
@@ -162,6 +172,7 @@ export function useKeyboardNavigation({
     startEdit,
     setDraft,
     commitEdit,
+    cancelEdit,
     setSelectedCell,
   ]);
 }

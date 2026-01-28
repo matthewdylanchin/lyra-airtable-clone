@@ -289,6 +289,7 @@ export default function TableClient() {
     },
     setPendingCellEdit,
     clearPendingCellEdit,
+    allColumns: columns,
   });
 
   const flushPendingEdits = useCallback(
@@ -564,6 +565,7 @@ export default function TableClient() {
     startEdit,
     setDraft,
     commitEdit, // ✅ Pass commitEdit
+    cancelEdit,
   });
   const isBusy = isInitialLoading || upsert.isPending;
 

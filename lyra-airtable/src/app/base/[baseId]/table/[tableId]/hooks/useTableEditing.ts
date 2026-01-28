@@ -19,6 +19,7 @@ export function useTableEditing({
   pendingEditsRef,
   setPendingCellEdit,
   clearPendingCellEdit,
+  allColumns, // ✅ NEW: Pass all columns including optimistic
 }: {
   data: TableData | undefined;
   cellByKey: Map<string, Cell>;
@@ -36,6 +37,7 @@ export function useTableEditing({
     columnId: string,
     newValue?: { textValue: string | null; numberValue: number | null },
   ) => void;
+  allColumns?: Array<{ id: string; name: string; type: string; order: number }>; // ✅ NEW
 }) {
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState("");
@@ -53,7 +55,18 @@ export function useTableEditing({
     setLocalError(null);
 
     const cell = cellByKey.get(`${rowId}:${columnId}`);
-    const col = data?.columns.find((c) => c.id === columnId);
+
+    // ✅ Look up column from allColumns (includes optimistic columns)
+    const col =
+      allColumns?.find((c) => c.id === columnId) ??
+      data?.columns.find((c) => c.id === columnId);
+
+    // ✅ If column not found, log warning but continue (prevents keyboard lock)
+    if (!col) {
+      console.warn(
+        `Column ${columnId} not found in allColumns or data.columns`,
+      );
+    }
 
     const value =
       col?.type === "NUMBER"
@@ -124,7 +137,10 @@ export function useTableEditing({
       return;
     }
 
-    const column = data?.columns.find((c) => c.id === columnId);
+    // ✅ Look up column from allColumns (includes optimistic columns)
+    const column =
+      allColumns?.find((c) => c.id === columnId) ??
+      data?.columns.find((c) => c.id === columnId);
     const isNumber = column?.type === "NUMBER";
     const textValue = isNumber ? null : currentDraft;
     const numberValue = isNumber ? Number(currentDraft) : null;
@@ -179,7 +195,6 @@ export function useTableEditing({
     }
 
     // ✅ 4. Schedule mutation for next tick (truly non-blocking)
-    // This ensures the mutation doesn't block the tab keypress at all
     setTimeout(() => {
       upsert.mutate(
         { rowId, columnId, textValue, numberValue },
@@ -201,6 +216,7 @@ export function useTableEditing({
       );
     }, 0);
   }, [
+    allColumns, // ✅ Add to deps
     data?.columns,
     onCommit,
     setPendingCellEdit,

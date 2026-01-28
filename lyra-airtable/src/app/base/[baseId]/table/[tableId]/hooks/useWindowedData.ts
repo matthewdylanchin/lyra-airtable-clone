@@ -230,6 +230,7 @@ export function useWindowedData({
           const newOptimisticColumns = new Map(prev.optimisticColumns);
           const serverColumnIds = new Set(result.columns.map((c) => c.id));
 
+          // ✅ Remove optimistic columns that now exist on server
           for (const [tempId, optCol] of prev.optimisticColumns) {
             if (serverColumnIds.has(optCol.column.id)) {
               newOptimisticColumns.delete(tempId);
@@ -357,12 +358,13 @@ export function useWindowedData({
     [getRowAtIndex],
   );
 
-  // ✅ Check ref first for instant reads, but include state.pendingCellEdits in deps to trigger re-renders
+  // ✅ ENHANCED: getCellValue now properly handles optimistic columns
   const getCellValue = useCallback(
     (rowId: string, columnId: string): CellData | null => {
       const cellKey = `${rowId}:${columnId}`;
 
-      // 1. Check pending edits (use state for re-renders, but ref gives us instant access)
+      // ✅ HIGHEST PRIORITY: Check pending edits FIRST
+      // This works for ALL cells: normal, optimistic rows, optimistic columns
       const pendingEdit = state.pendingCellEdits.get(cellKey);
       if (pendingEdit) {
         return {
@@ -375,27 +377,29 @@ export function useWindowedData({
         };
       }
 
-      // 2. Check optimistic rows
+      // 2. Check optimistic rows (for newly added rows)
       const optimisticRow = state.optimisticRows.get(rowId);
       if (optimisticRow) {
-        return optimisticRow.cells.find((c) => c.columnId === columnId) ?? null;
+        const cell = optimisticRow.cells.find((c) => c.columnId === columnId);
+        if (cell) return cell;
       }
 
-      // 3. Check optimistic columns
+      // 3. Check optimistic columns (for newly added columns)
       for (const [, optimisticColumn] of state.optimisticColumns) {
         if (optimisticColumn.column.id === columnId) {
-          return optimisticColumn.cellValues.get(rowId) ?? null;
+          const cell = optimisticColumn.cellValues.get(rowId);
+          if (cell) return cell;
         }
       }
 
-      // 4. Finally check cache
+      // 4. Check cache (server data)
       return state.cellCache.get(cellKey) ?? null;
     },
     [
       state.cellCache,
       state.optimisticRows,
       state.optimisticColumns,
-      state.pendingCellEdits, // ✅ Include this to trigger re-renders when pending edits change
+      state.pendingCellEdits,
     ],
   );
 
@@ -638,6 +642,7 @@ export function useWindowedData({
 
         const cellValues = new Map<string, CellData>();
 
+        // Add cells for all loaded rows
         for (const [, rows] of prev.rowCache) {
           rows.forEach((row) => {
             if (!prev.deletedRowIds.has(row.id)) {
@@ -653,6 +658,7 @@ export function useWindowedData({
           });
         }
 
+        // Add cells for all optimistic rows
         prev.optimisticRows.forEach((optRow) => {
           cellValues.set(optRow.row.id, {
             id: `temp-cell-${id}-${optRow.row.id}`,
@@ -719,6 +725,7 @@ export function useWindowedData({
           cellValues: updatedCellValues,
         });
 
+        // ✅ CRITICAL: Update pending cell edits with new column ID
         const newPendingCellEdits = new Map(prev.pendingCellEdits);
         for (const [key, edit] of newPendingCellEdits) {
           if (key.endsWith(`:${tempId}`)) {
@@ -796,22 +803,42 @@ export function useWindowedData({
         newPendingCellEdits.delete(cellKey);
 
         const newCellCache = new Map(prev.cellCache);
+        let newOptimisticColumns = prev.optimisticColumns;
+
         if (newValue) {
           const existingCell = prev.cellCache.get(cellKey);
-          newCellCache.set(cellKey, {
+          const updatedCell: CellData = {
             id: existingCell?.id ?? `${rowId}-${columnId}`,
             rowId,
             columnId,
             textValue: newValue.textValue,
             numberValue: newValue.numberValue,
             updatedAt: new Date(),
-          });
+          };
+
+          newCellCache.set(cellKey, updatedCell);
+
+          // ✅ CRITICAL: Also update optimistic column cells
+          for (const [tempId, optimisticColumn] of prev.optimisticColumns) {
+            if (optimisticColumn.column.id === columnId) {
+              newOptimisticColumns = new Map(prev.optimisticColumns);
+              const updatedCellValues = new Map(optimisticColumn.cellValues);
+              updatedCellValues.set(rowId, updatedCell);
+
+              newOptimisticColumns.set(tempId, {
+                ...optimisticColumn,
+                cellValues: updatedCellValues,
+              });
+              break;
+            }
+          }
         }
 
         return {
           ...prev,
           pendingCellEdits: newPendingCellEdits,
           cellCache: newValue ? newCellCache : prev.cellCache,
+          optimisticColumns: newOptimisticColumns,
         };
       });
     },
