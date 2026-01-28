@@ -33,6 +33,7 @@ export default function TableClient() {
   const {
     searchBarOpen,
     setSearchBarOpen,
+    searchButtonRef,
     filterPanelOpen,
     setFilterPanelOpen,
     filterButtonRef,
@@ -44,33 +45,26 @@ export default function TableClient() {
   } = useTableView();
 
   // ========================================
-  // DEBOUNCED SEARCH AND FILTER STATE
+  // SEARCH STATE - LOCAL ONLY (NO DEBOUNCE, NO SERVER FILTER)
   // ========================================
-
-  // Local state for immediate UI feedback
   const [localSearchQuery, setLocalSearchQuery] = useState("");
+
+  // ========================================
+  // DEBOUNCED FILTER AND SORT STATE
+  // ========================================
   const [localFilters, setLocalFilters] = useState<FilterCondition[]>([]);
   const [localFilterConjunction, setLocalFilterConjunction] = useState<
     "and" | "or"
   >("and");
   const [localSorts, setSorts] = useState<SortType[]>([]);
 
-  // Debounced state that actually triggers queries
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  // Debounced state that actually triggers queries (filters only, NOT search)
   const [debouncedFilters, setDebouncedFilters] = useState<FilterCondition[]>(
     [],
   );
   const [debouncedFilterConjunction, setDebouncedFilterConjunction] = useState<
     "and" | "or"
   >("and");
-
-  // Debounce search (300ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(localSearchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [localSearchQuery]);
 
   // Debounce filters (500ms - longer since more complex)
   useEffect(() => {
@@ -80,8 +74,6 @@ export default function TableClient() {
     }, 500);
     return () => clearTimeout(timer);
   }, [localFilters, localFilterConjunction]);
-
-  const searchButtonRef = useRef<HTMLButtonElement>(null);
 
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     if (typeof window === "undefined") return {};
@@ -110,7 +102,7 @@ export default function TableClient() {
   );
   const pendingEditsRef = useRef<PendingEditsMap>(new Map());
 
-  // Use windowed data hook with debounced values
+  // ✅ Use windowed data hook WITHOUT search query (search is client-side only)
   const {
     table: tableInfo,
     columns,
@@ -139,7 +131,7 @@ export default function TableClient() {
     tableId,
     windowSize: 500,
     overscan: 100,
-    searchQuery: debouncedSearchQuery || undefined,
+    // ✅ NO searchQuery here - search is client-side only
     filters: debouncedFilters.length > 0 ? debouncedFilters : undefined,
     filterConjunction: debouncedFilterConjunction,
     sorts: localSorts.length > 0 ? localSorts : undefined,
@@ -150,7 +142,7 @@ export default function TableClient() {
     () => ({
       tableId,
       limit: 500,
-      searchQuery: debouncedSearchQuery || undefined,
+      // ✅ NO searchQuery in query key
       filterConjunction: debouncedFilterConjunction,
       filters:
         debouncedFilters.length > 0
@@ -171,13 +163,7 @@ export default function TableClient() {
             }))
           : undefined,
     }),
-    [
-      tableId,
-      debouncedSearchQuery,
-      debouncedFilterConjunction,
-      debouncedFilters,
-      localSorts,
-    ],
+    [tableId, debouncedFilterConjunction, debouncedFilters, localSorts],
   );
 
   const { setDataQueryKey } = useTableView();
@@ -386,7 +372,7 @@ export default function TableClient() {
     [flushPendingEdits],
   );
 
-  // Search match tracking - use LOCAL search query for immediate highlighting
+  // ✅ Search match tracking - PURE CLIENT-SIDE (no debounce, instant highlighting)
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const matchingCells = useMemo(() => {
@@ -495,7 +481,7 @@ export default function TableClient() {
           setAddColumnOpen({ insert, position });
         },
         upsert,
-        searchQuery: localSearchQuery, // Use local for immediate highlighting
+        searchQuery: localSearchQuery, // ✅ Use local for instant highlighting
         currentMatch,
         filteredColumnIds,
         sortedColumnIds,
@@ -510,7 +496,7 @@ export default function TableClient() {
       startEdit,
       cancelEdit,
       upsert,
-      localSearchQuery,
+      localSearchQuery, // ✅ No debounce - instant highlighting
       currentMatch,
       filteredColumnIds,
       sortedColumnIds,
@@ -561,12 +547,13 @@ export default function TableClient() {
     selectedCell,
     setSelectedCell,
     editing,
-    editingRef, // ✅ Pass editingRef
+    editingRef,
     startEdit,
     setDraft,
-    commitEdit, // ✅ Pass commitEdit
+    commitEdit,
     cancelEdit,
   });
+
   const isBusy = isInitialLoading || upsert.isPending;
 
   useEffect(() => {
@@ -625,7 +612,7 @@ export default function TableClient() {
           setCurrentMatchIndex(0);
         }}
         searchQuery={localSearchQuery}
-        onSearchChange={setLocalSearchQuery}
+        onSearchChange={setLocalSearchQuery} // ✅ Direct update, no debounce
         totalResults={matchingCells.length}
         currentResultIndex={currentMatchIndex}
         onNextResult={goToNextMatch}

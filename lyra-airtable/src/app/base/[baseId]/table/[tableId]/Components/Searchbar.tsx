@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
+import { X, ChevronUp, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 
 type SearchBarProps = {
@@ -30,22 +30,25 @@ export default function SearchBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [position, setPosition] = useState({ top: 0, right: 0 });
+  const [position, setPosition] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Calculate position based on search button
+  // ✅ Calculate position using RIGHT offset from window edge
   useEffect(() => {
     if (!isOpen || !searchButtonRef?.current) return;
 
     const updatePosition = () => {
       const buttonRect = searchButtonRef.current?.getBoundingClientRect();
       if (buttonRect) {
+        // ✅ Calculate distance from right edge of window to right edge of button
+        const rightOffset = window.innerWidth - buttonRect.right;
+
         setPosition({
           top: buttonRect.bottom + 8,
-          right: window.innerWidth - buttonRect.right,
+          right: rightOffset, // Distance from right edge of viewport
         });
       }
     };
@@ -114,7 +117,7 @@ export default function SearchBar({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose, onNextResult, onPreviousResult]);
 
-  if (!isOpen || !mounted) return null;
+  if (!isOpen || !mounted || !position) return null;
 
   const dropdown = (
     <div
@@ -172,7 +175,6 @@ export default function SearchBar({
         <button
           className="flex-shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
           onClick={() => {
-            // TODO: Implement Ask Omni functionality
             console.log("Ask Omni clicked");
           }}
         >
