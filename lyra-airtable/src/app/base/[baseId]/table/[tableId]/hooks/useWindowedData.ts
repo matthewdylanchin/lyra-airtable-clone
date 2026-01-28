@@ -137,11 +137,12 @@ export function useWindowedData({
     deletedRowIds: new Set(),
   });
 
-  // ✅ Keep ref for instant synchronous reads during commit
   const pendingCellEditsRef = useRef<Map<string, PendingCellEdit>>(new Map());
-
   const activeRequests = useRef<Set<string>>(new Set());
   const queryChangeInProgress = useRef(false);
+
+  // ✅ Track if this is the first load ever
+  const hasLoadedOnce = useRef(false);
 
   const queryParams = useMemo(
     () => ({
@@ -230,7 +231,6 @@ export function useWindowedData({
           const newOptimisticColumns = new Map(prev.optimisticColumns);
           const serverColumnIds = new Set(result.columns.map((c) => c.id));
 
-          // ✅ Remove optimistic columns that now exist on server
           for (const [tempId, optCol] of prev.optimisticColumns) {
             if (serverColumnIds.has(optCol.column.id)) {
               newOptimisticColumns.delete(tempId);
@@ -248,11 +248,14 @@ export function useWindowedData({
             rowCache: newRowCache,
             cellCache: newCellCache,
             loadingRanges: newLoadingRanges,
-            isInitialLoading: false,
+            isInitialLoading: false, // ✅ Always set to false after first load
             error: null,
             optimisticColumns: newOptimisticColumns,
           };
         });
+
+        // ✅ Mark that we've loaded at least once
+        hasLoadedOnce.current = true;
       } catch (error) {
         setState((prev) => {
           const newLoadingRanges = new Set(prev.loadingRanges);
@@ -265,6 +268,8 @@ export function useWindowedData({
             error: error as Error,
           };
         });
+
+        hasLoadedOnce.current = true;
       } finally {
         activeRequests.current.delete(rangeKey);
       }
@@ -275,15 +280,16 @@ export function useWindowedData({
   useEffect(() => {
     queryChangeInProgress.current = true;
 
+    // ✅ CRITICAL FIX: Only show loading on first load, not on filter/sort changes
     setState((prev) => ({
       ...prev,
-      table: null,
-      columns: [],
+      table: hasLoadedOnce.current ? prev.table : null, // Keep table if we've loaded before
+      columns: hasLoadedOnce.current ? prev.columns : [], // Keep columns if we've loaded before
       totalCount: prev.totalCount,
-      rowCache: prev.rowCache,
-      cellCache: prev.cellCache,
+      rowCache: new Map(), // Clear cache
+      cellCache: new Map(), // Clear cache
       loadingRanges: new Set(),
-      isInitialLoading: true,
+      isInitialLoading: !hasLoadedOnce.current, // ✅ Only show loading on first load
       error: null,
     }));
 
@@ -358,13 +364,10 @@ export function useWindowedData({
     [getRowAtIndex],
   );
 
-  // ✅ ENHANCED: getCellValue now properly handles optimistic columns
   const getCellValue = useCallback(
     (rowId: string, columnId: string): CellData | null => {
       const cellKey = `${rowId}:${columnId}`;
 
-      // ✅ HIGHEST PRIORITY: Check pending edits FIRST
-      // This works for ALL cells: normal, optimistic rows, optimistic columns
       const pendingEdit = state.pendingCellEdits.get(cellKey);
       if (pendingEdit) {
         return {
@@ -377,14 +380,12 @@ export function useWindowedData({
         };
       }
 
-      // 2. Check optimistic rows (for newly added rows)
       const optimisticRow = state.optimisticRows.get(rowId);
       if (optimisticRow) {
         const cell = optimisticRow.cells.find((c) => c.columnId === columnId);
         if (cell) return cell;
       }
 
-      // 3. Check optimistic columns (for newly added columns)
       for (const [, optimisticColumn] of state.optimisticColumns) {
         if (optimisticColumn.column.id === columnId) {
           const cell = optimisticColumn.cellValues.get(rowId);
@@ -392,7 +393,6 @@ export function useWindowedData({
         }
       }
 
-      // 4. Check cache (server data)
       return state.cellCache.get(cellKey) ?? null;
     },
     [
@@ -470,6 +470,7 @@ export function useWindowedData({
     [state.loadingRanges, windowSize],
   );
 
+  // ... (rest of the functions remain the same - addOptimisticRow, insertOptimisticRow, etc.)
   const addOptimisticRow = useCallback((tempId: string) => {
     setState((prev) => {
       const newOptimisticRows = new Map(prev.optimisticRows);
@@ -592,7 +593,6 @@ export function useWindowedData({
           }
         }
 
-        // ✅ Sync ref
         pendingCellEditsRef.current = newPendingCellEdits;
 
         return {
@@ -642,7 +642,6 @@ export function useWindowedData({
 
         const cellValues = new Map<string, CellData>();
 
-        // Add cells for all loaded rows
         for (const [, rows] of prev.rowCache) {
           rows.forEach((row) => {
             if (!prev.deletedRowIds.has(row.id)) {
@@ -658,7 +657,6 @@ export function useWindowedData({
           });
         }
 
-        // Add cells for all optimistic rows
         prev.optimisticRows.forEach((optRow) => {
           cellValues.set(optRow.row.id, {
             id: `temp-cell-${id}-${optRow.row.id}`,
@@ -725,7 +723,6 @@ export function useWindowedData({
           cellValues: updatedCellValues,
         });
 
-        // ✅ CRITICAL: Update pending cell edits with new column ID
         const newPendingCellEdits = new Map(prev.pendingCellEdits);
         for (const [key, edit] of newPendingCellEdits) {
           if (key.endsWith(`:${tempId}`)) {
@@ -738,7 +735,6 @@ export function useWindowedData({
           }
         }
 
-        // ✅ Sync ref
         pendingCellEditsRef.current = newPendingCellEdits;
 
         return {
@@ -751,7 +747,6 @@ export function useWindowedData({
     [],
   );
 
-  // ✅ Update both ref AND state to trigger re-renders
   const setPendingCellEdit = useCallback(
     (
       rowId: string,
@@ -769,10 +764,8 @@ export function useWindowedData({
         timestamp: Date.now(),
       };
 
-      // Update ref for instant synchronous access
       pendingCellEditsRef.current.set(cellKey, editData);
 
-      // Update state to trigger re-render
       setState((prev) => {
         const newPendingCellEdits = new Map(prev.pendingCellEdits);
         newPendingCellEdits.set(cellKey, editData);
@@ -786,7 +779,6 @@ export function useWindowedData({
     [],
   );
 
-  // ✅ Update both ref AND state
   const clearPendingCellEdit = useCallback(
     (
       rowId: string,
@@ -795,7 +787,6 @@ export function useWindowedData({
     ) => {
       const cellKey = `${rowId}:${columnId}`;
 
-      // Update ref for instant synchronous access
       pendingCellEditsRef.current.delete(cellKey);
 
       setState((prev) => {
@@ -818,7 +809,6 @@ export function useWindowedData({
 
           newCellCache.set(cellKey, updatedCell);
 
-          // ✅ CRITICAL: Also update optimistic column cells
           for (const [tempId, optimisticColumn] of prev.optimisticColumns) {
             if (optimisticColumn.column.id === columnId) {
               newOptimisticColumns = new Map(prev.optimisticColumns);

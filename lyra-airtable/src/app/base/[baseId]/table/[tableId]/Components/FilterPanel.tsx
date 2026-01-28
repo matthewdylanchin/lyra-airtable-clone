@@ -138,25 +138,6 @@ export default function FilterPanel({
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
-  // ========================================
-  // LOCAL STATE - prevents query spam
-  // ========================================
-  const [localFilters, setLocalFilters] = useState(filters);
-  const [localConjunctionMode, setLocalConjunctionMode] =
-    useState(conjunctionMode);
-
-  // Sync local state when props change
-  useEffect(() => {
-    setLocalFilters(filters);
-  }, [filters]);
-
-  useEffect(() => {
-    setLocalConjunctionMode(conjunctionMode);
-  }, [conjunctionMode]);
-
-  // Track if user has made changes
-  const hasChanges = useRef(false);
-
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -192,24 +173,12 @@ export default function FilterPanel({
         triggerRef?.current &&
         !triggerRef.current.contains(e.target as Node)
       ) {
-        // Apply changes when clicking outside
-        if (hasChanges.current) {
-          onChange(localFilters);
-          onConjunctionModeChange?.(localConjunctionMode);
-          hasChanges.current = false;
-        }
         onClose();
       }
     };
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        // Apply changes on escape
-        if (hasChanges.current) {
-          onChange(localFilters);
-          onConjunctionModeChange?.(localConjunctionMode);
-          hasChanges.current = false;
-        }
         onClose();
       }
     };
@@ -220,19 +189,11 @@ export default function FilterPanel({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [
-    isOpen,
-    onClose,
-    triggerRef,
-    localFilters,
-    localConjunctionMode,
-    onChange,
-    onConjunctionModeChange,
-  ]);
+  }, [isOpen, onClose, triggerRef]);
 
   const addCondition = () => {
     const newFilters: FilterCondition[] = [
-      ...localFilters,
+      ...filters,
       {
         id: uuidv4(),
         columnId: columns[0]?.id ?? "",
@@ -240,16 +201,11 @@ export default function FilterPanel({
         value: "",
       },
     ];
-    setLocalFilters(newFilters);
-    hasChanges.current = true;
+    onChange(newFilters);
   };
 
   const removeCondition = (id: string) => {
-    const newFilters = localFilters.filter((f) => f.id !== id);
-    setLocalFilters(newFilters);
-    hasChanges.current = true;
-
-    // Apply immediately when removing
+    const newFilters = filters.filter((f) => f.id !== id);
     onChange(newFilters);
   };
 
@@ -258,39 +214,14 @@ export default function FilterPanel({
     key: K,
     value: FilterCondition[K],
   ) => {
-    const newFilters = localFilters.map((f) =>
+    const newFilters = filters.map((f) =>
       f.id === id ? { ...f, [key]: value } : f,
     );
-    setLocalFilters(newFilters);
-    hasChanges.current = true;
+    onChange(newFilters);
   };
 
   const handleConjunctionChange = (mode: "and" | "or") => {
-    setLocalConjunctionMode(mode);
-    hasChanges.current = true;
-
-    // Apply immediately when changing conjunction
     onConjunctionModeChange?.(mode);
-  };
-
-  // Apply filters on Enter key
-  const handleValueKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      if (hasChanges.current) {
-        onChange(localFilters);
-        onConjunctionModeChange?.(localConjunctionMode);
-        hasChanges.current = false;
-      }
-    }
-  };
-
-  // Apply filters on blur (when user clicks away from input)
-  const handleValueBlur = () => {
-    if (hasChanges.current) {
-      onChange(localFilters);
-      onConjunctionModeChange?.(localConjunctionMode);
-      hasChanges.current = false;
-    }
   };
 
   const getOperatorsForColumn = (columnId: string) => {
@@ -313,15 +244,7 @@ export default function FilterPanel({
       <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
         <h3 className="text-sm font-medium text-zinc-900">Filter</h3>
         <button
-          onClick={() => {
-            // Apply changes when closing
-            if (hasChanges.current) {
-              onChange(localFilters);
-              onConjunctionModeChange?.(localConjunctionMode);
-              hasChanges.current = false;
-            }
-            onClose();
-          }}
+          onClick={onClose}
           className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
         >
           <X size={16} />
@@ -346,14 +269,14 @@ export default function FilterPanel({
         </div>
 
         <div className="space-y-2">
-          {localFilters.length === 0 ? (
+          {filters.length === 0 ? (
             <div className="rounded-md py-8 text-center">
               <div className="mb-1 text-sm text-zinc-500">
                 No filter conditions are applied
               </div>
             </div>
           ) : (
-            localFilters.map((condition, index) => {
+            filters.map((condition, index) => {
               const operators = getOperatorsForColumn(condition.columnId).map(
                 (op) => ({
                   value: op.value,
@@ -369,7 +292,7 @@ export default function FilterPanel({
                     </span>
                   ) : index === 1 ? (
                     <CustomDropdown
-                      value={localConjunctionMode}
+                      value={conjunctionMode}
                       options={[
                         { value: "and", label: "and" },
                         { value: "or", label: "or" },
@@ -381,7 +304,7 @@ export default function FilterPanel({
                     />
                   ) : (
                     <span className="w-[52px] text-xs font-medium text-zinc-700">
-                      {localConjunctionMode === "and" ? "And" : "Or"}
+                      {conjunctionMode === "and" ? "And" : "Or"}
                     </span>
                   )}
 
@@ -391,28 +314,22 @@ export default function FilterPanel({
                       value: c.id,
                       label: c.name,
                     }))}
-                    onChange={(v) => {
-                      updateCondition(condition.id, "columnId", v);
-                      // Apply immediately when changing column
-                      onChange(
-                        localFilters.map((f) =>
-                          f.id === condition.id ? { ...f, columnId: v } : f,
-                        ),
-                      );
-                    }}
+                    onChange={(v) =>
+                      updateCondition(condition.id, "columnId", v)
+                    }
                     className="w-[120px]"
                   />
 
                   <CustomDropdown
                     value={condition.operator}
                     options={operators}
-                    onChange={(v) => {
+                    onChange={(v) =>
                       updateCondition(
                         condition.id,
                         "operator",
                         v as FilterCondition["operator"],
-                      );
-                    }}
+                      )
+                    }
                     className="w-[120px]"
                   />
 
@@ -422,8 +339,6 @@ export default function FilterPanel({
                       onChange={(e) =>
                         updateCondition(condition.id, "value", e.target.value)
                       }
-                      onKeyDown={handleValueKeyDown}
-                      onBlur={handleValueBlur}
                       className="flex-1 rounded border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-300 focus:outline-none"
                       placeholder="Enter a value"
                     />

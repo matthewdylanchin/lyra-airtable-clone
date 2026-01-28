@@ -3,7 +3,6 @@
 import { useRef, useEffect, useState } from "react";
 import {
   ChevronDown,
-  Filter,
   EyeOff,
   Search,
   Layers,
@@ -166,7 +165,9 @@ export default function ViewActionBar() {
             ref={hideFieldsButtonRef}
             onClick={() => setHideFieldsPanelOpen(true)}
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100 ${
-              hiddenColumnIds.length > 0 ? "bg-sky-100 text-zinc-700" : ""
+              hiddenColumnIds.length > 0
+                ? "bg-sky-100 text-sky-700 hover:bg-sky-200"
+                : ""
             }`}
           >
             <EyeOff className="h-4 w-4 text-zinc-500" />
@@ -175,50 +176,36 @@ export default function ViewActionBar() {
               : "Hide fields"}
           </button>
 
-          {/* Filter button with dynamic text */}
+          {/* ✅ Filter button with proper styling */}
           <button
             ref={filterButtonRef}
             onClick={() => setFilterPanelOpen(true)}
-            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
-              filters.length > 0 ? "bg-emerald-100 text-zinc-700" : ""
+            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
+              filters.length > 0
+                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                : "hover:bg-zinc-100"
             }`}
           >
             <ListFilter className="h-4 w-4" />
             {getFilterButtonText()}
-            {filters.length > 0 && (
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFilters([]);
-                }}
-                className="cursor-pointer rounded hover:bg-emerald-100"
-              ></span>
-            )}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
             <Layers className="h-4 w-4 text-zinc-500" /> Group
           </button>
 
-          {/* Sort button with dynamic text */}
+          {/* ✅ Sort button with proper styling */}
           <button
             ref={sortButtonRef}
             onClick={() => setSortPanelOpen(true)}
-            className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-zinc-100 ${
-              sorts.length > 0 ? "bg-orange-100 text-zinc-700" : ""
+            className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
+              sorts.length > 0
+                ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                : "hover:bg-zinc-100"
             }`}
           >
             <ArrowDownUp className="h-4 w-4" />
             {getSortButtonText()}
-            {sorts.length > 0 && (
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSorts([]);
-                }}
-                className="cursor-pointer rounded hover:bg-orange-100"
-              ></span>
-            )}
           </button>
 
           <button className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-zinc-100">
